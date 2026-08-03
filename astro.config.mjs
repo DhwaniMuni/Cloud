@@ -1,6 +1,7 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 import mdx from '@astrojs/mdx';
+import { transformerCodeMeta } from './src/lib/shiki-transformers.mjs';
 
 // TODO: replace both of these with your own values before deploying.
 // `site`  — your GitHub Pages origin: https://<USERNAME>.github.io
@@ -25,6 +26,7 @@ export default defineConfig({
         dark: 'github-dark-dimmed',
       },
       wrap: false,
+      transformers: [transformerCodeMeta()],
     },
   },
 });
