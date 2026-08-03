@@ -1,0 +1,159 @@
+---
+import ToolChip from './ToolChip.astro';
+import { topicPath } from '../lib/paths';
+
+/**
+ * One entry in the home page topic list.
+ *
+ * The whole card is clickable, but the anchor wraps only the title — a stretched
+ * pseudo-element covers the card. That keeps the link's accessible name short
+ * instead of reading out the hook and every tool chip, and leaves the chips
+ * independently clickable.
+ */
+interface Props {
+  slug: string;
+  order: number;
+  title: string;
+  hook: string;
+  tools: string[];
+  draft: boolean;
+}
+
+const { slug, order, title, hook, tools, draft } = Astro.props;
+---
+
+<li class="card">
+  <span class="card-number" aria-hidden="true">{String(order).padStart(2, '0')}</span>
+
+  <div class="card-body">
+    <h3 class="card-title">
+      <a href={topicPath(slug)} class="card-link">{title}</a>
+      {draft && <span class="wip-badge">WIP</span>}
+    </h3>
+
+    <p class="card-hook">{hook}</p>
+
+    {
+      tools.length > 0 && (
+        <ul class="card-tools" aria-label={`Tools used in ${title}`}>
+          {tools.map((tool) => (
+            <li>
+              <ToolChip name={tool} size="sm" />
+            </li>
+          ))}
+        </ul>
+      )
+    }
+  </div>
+</li>
+
+<style>
+  .card {
+    position: relative;
+    display: grid;
+    grid-template-columns: 2.25rem minmax(0, 1fr);
+    gap: var(--space-md);
+    align-items: start;
+    padding: var(--space-sm) var(--space-md);
+    background-color: var(--bg-raised);
+    border: var(--border-width) solid var(--border);
+    border-radius: var(--radius-md);
+    transition: border-color var(--duration-base) var(--ease-out);
+  }
+
+  .card:hover {
+    border-color: var(--accent-border);
+  }
+
+  .card:focus-within {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+
+  .card-number {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-medium);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+    padding-top: 0.15rem;
+  }
+
+  .card-body {
+    min-width: 0;
+  }
+
+  .card-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2xs);
+    font-size: var(--text-xl);
+  }
+
+  .card-link {
+    color: var(--text);
+    text-decoration: none;
+  }
+
+  .card-link:hover {
+    color: var(--accent);
+  }
+
+  .card-link:focus-visible {
+    outline: none;
+  }
+
+  /* Stretched link covers the card; the chips sit above it so they stay usable. */
+  .card-link::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+  }
+
+  .wip-badge {
+    position: relative;
+    z-index: 1;
+    padding: 0.05rem var(--space-2xs);
+    background-color: var(--warning-bg);
+    border: var(--border-width) solid var(--warning-border);
+    border-radius: var(--radius-pill);
+    font-size: var(--text-2xs);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-wide);
+    color: var(--text-secondary);
+  }
+
+  .card-hook {
+    margin-top: var(--space-3xs);
+    max-width: 62ch;
+    font-size: var(--text-sm);
+    line-height: var(--leading-normal);
+    color: var(--text-secondary);
+  }
+
+  .card-tools {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3xs);
+    margin: var(--space-xs) 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  @media (max-width: 30rem) {
+    .card {
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--space-3xs);
+      padding: var(--space-xs) var(--space-sm);
+    }
+
+    .card-number {
+      padding-top: 0;
+      font-size: var(--text-xs);
+    }
+  }
+</style>

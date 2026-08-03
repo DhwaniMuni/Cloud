@@ -1,0 +1,31 @@
+---
+import { render } from 'astro:content';
+import type { GetStaticPaths } from 'astro';
+import TopicLayout from '../../layouts/TopicLayout.astro';
+import { getTopics, neighbours } from '../../lib/topics';
+
+/**
+ * One page per topic, at /topic/<slug>. The slug is the content filename, so
+ * naming a file `api-endpoints.mdx` gives you `/topic/api-endpoints`.
+ */
+export const getStaticPaths = (async () => {
+  const topics = await getTopics();
+
+  return topics.map((entry) => ({
+    params: { slug: entry.id },
+    props: { entry, ...neighbours(topics, entry.id) },
+  }));
+}) satisfies GetStaticPaths;
+
+const { entry, prev, next } = Astro.props;
+const { Content, headings } = await render(entry);
+
+// `headings` covers the MDX body only; TopicLayout adds the fixed section
+// headings around it. An empty body means the "How it works" section and its
+// rail entry are dropped.
+const hasBody = (entry.body ?? '').trim().length > 0;
+---
+
+<TopicLayout entry={entry} bodyHeadings={headings} prev={prev} next={next} hasBody={hasBody}>
+  <Content />
+</TopicLayout>

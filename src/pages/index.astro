@@ -1,48 +1,54 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
-import Timeline from '../components/Timeline.astro';
-import { getWeeks } from '../lib/weeks';
+import TopicCard from '../components/TopicCard.astro';
+import { getTopics } from '../lib/topics';
 import { site } from '../data/site';
-import { weekPath } from '../lib/paths';
-import { formatDateRange } from '../lib/format';
+import { topicPath } from '../lib/paths';
 
-const weeks = await getWeeks();
-const capstone = weeks.find((entry) => entry.data.week === site.capstoneWeek);
+const topics = await getTopics();
 
-// The program's overall span, derived from content rather than hardcoded.
-const programRange =
-  weeks.length > 0
-    ? formatDateRange(weeks[0]!.data.startDate, weeks[weeks.length - 1]!.data.endDate)
-    : undefined;
+// The "Start here" callout points at one topic out of several. With a single
+// topic there is nothing to point away from, so it would just repeat the list.
+const featured = topics.length > 1 ? topics.find((entry) => entry.data.featured) : undefined;
 ---
 
 <BaseLayout title="Overview" description={site.summary} current="overview">
   <div class="home">
     <header class="hero">
       <h1>{site.author}</h1>
-      <p class="hero-tagline">
-        {site.tagline}
-        {programRange && <span class="hero-range">· {programRange}</span>}
-      </p>
+      <p class="hero-tagline">{site.tagline}</p>
       <p class="hero-summary">{site.summary}</p>
     </header>
 
-    <section class="timeline-section" aria-labelledby="timeline-heading">
-      <h2 id="timeline-heading" class="section-heading">The eight weeks</h2>
-      <Timeline weeks={weeks} />
+    <section class="topics-section" aria-labelledby="topics-heading">
+      <h2 id="topics-heading" class="section-heading">What I learned</h2>
+      <ol class="topic-list">
+        {
+          topics.map((entry) => (
+            <TopicCard
+              slug={entry.id}
+              order={entry.data.order}
+              title={entry.data.title}
+              hook={entry.data.hook}
+              tools={entry.data.tools}
+              draft={entry.data.draft}
+            />
+          ))
+        }
+      </ol>
     </section>
 
     {
-      capstone && (
-        <section class="capstone" aria-labelledby="capstone-heading">
-          <p class="capstone-eyebrow">Capstone</p>
-          <h2 id="capstone-heading" class="capstone-title">
-            <a href={weekPath(capstone.data.week)}>{capstone.data.title}</a>
+      featured && (
+        <section class="featured" aria-labelledby="featured-heading">
+          <p class="featured-eyebrow">Start here</p>
+          <h2 id="featured-heading" class="featured-title">
+            <a href={topicPath(featured.id)}>{featured.data.title}</a>
           </h2>
-          <p class="capstone-hook">{capstone.data.hook}</p>
-          <p class="capstone-cta">
-            <a href={weekPath(capstone.data.week)}>
-              Read the week {capstone.data.week} writeup
+          <p class="featured-hook">{featured.data.hook}</p>
+          <p class="featured-cta">
+            <a href={topicPath(featured.id)}>
+              Read it
               <span aria-hidden="true"> →</span>
             </a>
           </p>
@@ -76,11 +82,6 @@ const programRange =
     color: var(--text-secondary);
   }
 
-  .hero-range {
-    color: var(--text-muted);
-    font-size: var(--text-base);
-  }
-
   .hero-summary {
     margin-top: var(--space-md);
     max-width: var(--measure);
@@ -88,9 +89,9 @@ const programRange =
     color: var(--text-secondary);
   }
 
-  /* ── Timeline ───────────────────────────────────────────────────────────── */
+  /* ── Topic list ─────────────────────────────────────────────────────────── */
 
-  .timeline-section {
+  .topics-section {
     margin-top: var(--space-xl);
   }
 
@@ -103,17 +104,25 @@ const programRange =
     color: var(--text-muted);
   }
 
-  /* ── Capstone callout ───────────────────────────────────────────────────── */
+  .topic-list {
+    display: grid;
+    gap: var(--space-sm);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
 
-  .capstone {
-    margin-top: var(--space-lg);
+  /* ── Featured callout ───────────────────────────────────────────────────── */
+
+  .featured {
+    margin-top: var(--space-xl);
     padding: var(--space-md) var(--space-lg);
     background-color: var(--accent-subtle);
     border: var(--border-width) solid var(--accent-border);
     border-radius: var(--radius-lg);
   }
 
-  .capstone-eyebrow {
+  .featured-eyebrow {
     font-size: var(--text-2xs);
     font-weight: var(--weight-semibold);
     letter-spacing: var(--tracking-wide);
@@ -121,38 +130,38 @@ const programRange =
     color: var(--accent);
   }
 
-  .capstone-title {
+  .featured-title {
     margin-top: var(--space-3xs);
     font-size: var(--text-2xl);
   }
 
-  .capstone-title a {
+  .featured-title a {
     color: var(--text);
     text-decoration: none;
   }
 
-  .capstone-title a:hover {
+  .featured-title a:hover {
     color: var(--accent);
   }
 
-  .capstone-hook {
+  .featured-hook {
     margin-top: var(--space-2xs);
     max-width: var(--measure);
     color: var(--text-secondary);
     line-height: var(--leading-normal);
   }
 
-  .capstone-cta {
+  .featured-cta {
     margin-top: var(--space-sm);
     font-size: var(--text-sm);
     font-weight: var(--weight-medium);
   }
 
-  .capstone-cta a {
+  .featured-cta a {
     text-decoration: none;
   }
 
-  .capstone-cta a:hover {
+  .featured-cta a:hover {
     text-decoration: underline;
   }
 
@@ -165,7 +174,7 @@ const programRange =
       font-size: var(--text-3xl);
     }
 
-    .capstone {
+    .featured {
       padding: var(--space-sm) var(--space-md);
     }
   }

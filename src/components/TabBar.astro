@@ -1,65 +1,43 @@
 ---
-import { site } from '../data/site';
-import { path, weekPath } from '../lib/paths';
+import { path, topicPath } from '../lib/paths';
+import { getTopics } from '../lib/topics';
 import ThemeToggle from './ThemeToggle.astro';
 
 /**
- * Persistent top navigation: Overview · 1 … 8 · Skills.
+ * Persistent top navigation: Overview · <topic tabs…> · Skills.
  *
- * A real <nav> wrapping a list. The active tab gets aria-current="page".
+ * Tabs are derived from the topics collection, so adding a content file adds a
+ * tab. A real <nav> wrapping a list; the active tab gets aria-current="page".
  * Horizontally scrollable on narrow screens — never wraps.
  */
 interface Props {
-  /** Which tab is active. A number means that week page. */
-  current: 'overview' | 'skills' | number;
+  /** Active tab: 'overview', 'skills', or a topic slug. */
+  current: 'overview' | 'skills' | (string & {});
 }
 
 const { current } = Astro.props;
 
-interface Tab {
-  href: string;
-  label: string;
-  /** Full label for screen readers, since "3" alone is meaningless. */
-  srLabel?: string;
-  active: boolean;
-}
+const topics = await getTopics();
 
-const weekTabs: Tab[] = Array.from({ length: site.totalWeeks }, (_, i) => {
-  const week = i + 1;
-  return {
-    href: weekPath(week),
-    label: String(week),
-    srLabel: `Week ${week}`,
-    active: current === week,
-  };
-});
-
-const tabs: Tab[] = [
+const tabs = [
   { href: path('/'), label: 'Overview', active: current === 'overview' },
-  ...weekTabs,
+  ...topics.map((entry) => ({
+    href: topicPath(entry.id),
+    label: entry.data.tab,
+    active: current === entry.id,
+  })),
   { href: path('skills'), label: 'Skills', active: current === 'skills' },
 ];
 ---
 
 <header class="site-header">
-  <nav class="tabbar" aria-label="Program sections">
+  <nav class="tabbar" aria-label="Topics">
     <ul class="tabbar-list">
       {
         tabs.map((tab) => (
           <li class="tabbar-item">
-            <a
-              href={tab.href}
-              class:list={['tab', { 'tab-week': tab.srLabel !== undefined }]}
-              aria-current={tab.active ? 'page' : undefined}
-            >
-              {tab.srLabel ? (
-                <>
-                  <span aria-hidden="true">{tab.label}</span>
-                  <span class="visually-hidden">{tab.srLabel}</span>
-                </>
-              ) : (
-                tab.label
-              )}
+            <a href={tab.href} class="tab" aria-current={tab.active ? 'page' : undefined}>
+              {tab.label}
             </a>
           </li>
         ))
@@ -126,12 +104,6 @@ const tabs: Tab[] = [
       background-color var(--duration-fast) var(--ease-out);
   }
 
-  /* Week numbers are single characters — keep them square-ish and tappable. */
-  .tab-week {
-    min-width: 2rem;
-    text-align: center;
-  }
-
   .tab:hover {
     color: var(--text);
     background-color: var(--bg-inset);
@@ -155,7 +127,7 @@ const tabs: Tab[] = [
 
     /* Bigger touch targets on phones. */
     .tab {
-      padding: var(--space-2xs) var(--space-2xs);
+      padding: var(--space-2xs);
     }
   }
 </style>

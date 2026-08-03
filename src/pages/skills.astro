@@ -1,34 +1,35 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
-import { getWeeks } from '../lib/weeks';
+import { getTopics } from '../lib/topics';
 import { getTool, toolSlug, TOOL_CATEGORIES, type ToolCategory } from '../data/tools';
-import { weekPath } from '../lib/paths';
+import { topicPath } from '../lib/paths';
 
 /**
- * Skills index — DERIVED at build time from week frontmatter.
+ * Skills index — DERIVED at build time from topic frontmatter.
  *
- * Nothing here is hand-maintained: add a tool to a week's `tools:` list and it
- * appears here automatically, linked to every week it was used in. Registry
- * entries never referenced by a week are deliberately omitted, so this page
- * reflects what actually happened rather than what is installed.
+ * Nothing here is hand-maintained: add a tool to a topic's `tools:` list and it
+ * appears here automatically, linked to every topic it was used in. Registry
+ * entries never referenced by a topic are deliberately omitted, so this page
+ * reflects what was actually used rather than what is installed.
  */
-const weeks = await getWeeks();
+const topics = await getTopics();
 
 interface Usage {
   name: string;
   slug: string;
   docs?: string;
   category: ToolCategory;
-  weeks: { week: number; title: string }[];
+  topics: { slug: string; tab: string; title: string }[];
 }
 
 const usageByTool = new Map<string, Usage>();
 
-for (const entry of weeks) {
+for (const entry of topics) {
   for (const name of entry.data.tools) {
+    const use = { slug: entry.id, tab: entry.data.tab, title: entry.data.title };
     const existing = usageByTool.get(name);
     if (existing) {
-      existing.weeks.push({ week: entry.data.week, title: entry.data.title });
+      existing.topics.push(use);
       continue;
     }
     const tool = getTool(name);
@@ -38,7 +39,7 @@ for (const entry of weeks) {
       docs: tool?.docs,
       // The schema guarantees the tool is registered, so this is never a guess.
       category: tool!.category,
-      weeks: [{ week: entry.data.week, title: entry.data.title }],
+      topics: [use],
     });
   }
 }
@@ -51,7 +52,8 @@ const grouped = TOOL_CATEGORIES.map((category) => ({
 })).filter((group) => group.tools.length > 0);
 
 const total = usageByTool.size;
-const description = `The ${total} tools and practices used across 8 weeks of the program, grouped by category and linked to the weeks they appeared in.`;
+const topicCount = `${topics.length} ${topics.length === 1 ? 'topic' : 'topics'}`;
+const description = `The ${total} tools and practices used across every topic on this site, grouped by category and linked to where they appeared.`;
 ---
 
 <BaseLayout title="Skills" description={description} current="skills">
@@ -59,8 +61,8 @@ const description = `The ${total} tools and practices used across 8 weeks of the
     <header class="skills-header">
       <h1>Skills</h1>
       <p class="skills-intro">
-        {total} tools and practices across {weeks.length} weeks. Every entry is generated from week frontmatter
-        — follow a tool through to the weeks where it was used.
+        {total} tools and practices across {topicCount}. Every entry is generated from topic
+        frontmatter — follow a tool through to where it was used.
       </p>
     </header>
 
@@ -84,11 +86,11 @@ const description = `The ${total} tools and practices used across 8 weeks of the
                     tool.name
                   )}
                 </h3>
-                <ul class="tool-weeks" aria-label={`Weeks that used ${tool.name}`}>
-                  {tool.weeks.map((usage) => (
+                <ul class="tool-topics" aria-label={`Topics that used ${tool.name}`}>
+                  {tool.topics.map((usage) => (
                     <li>
-                      <a href={weekPath(usage.week)} class="week-ref" title={usage.title}>
-                        Week {usage.week}
+                      <a href={topicPath(usage.slug)} class="topic-ref" title={usage.title}>
+                        {usage.tab}
                       </a>
                     </li>
                   ))}
@@ -189,7 +191,7 @@ const description = `The ${total} tools and practices used across 8 weeks of the
     text-decoration: underline;
   }
 
-  .tool-weeks {
+  .tool-topics {
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-3xs);
@@ -198,7 +200,7 @@ const description = `The ${total} tools and practices used across 8 weeks of the
     list-style: none;
   }
 
-  .week-ref {
+  .topic-ref {
     display: inline-block;
     padding: 0.05rem var(--space-2xs);
     background-color: var(--bg-inset);
@@ -211,7 +213,7 @@ const description = `The ${total} tools and practices used across 8 weeks of the
     white-space: nowrap;
   }
 
-  .week-ref:hover {
+  .topic-ref:hover {
     color: var(--accent);
     border-color: var(--accent-border);
   }

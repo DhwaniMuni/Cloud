@@ -1,10 +1,12 @@
 ---
 /**
- * One problem/solution pair from a week's `challenges` frontmatter.
+ * One problem/solution pair from a topic's `challenges` frontmatter.
  *
  * Uses <dl> so the problem/solution relationship is conveyed structurally,
  * not just visually.
  */
+import { inlineMarkup } from '../lib/inline-markup';
+
 interface Props {
   title: string;
   problem: string;
@@ -19,11 +21,12 @@ const Heading = `h${headingLevel}` as 'h3' | 'h4';
 
 <article class="challenge">
   <Heading class="challenge-title">{title}</Heading>
+  {/* Both fields use `code` and **bold**, which YAML keeps as literal text. */}
   <dl class="challenge-body">
     <dt>What went wrong</dt>
-    <dd>{problem}</dd>
+    <dd set:html={inlineMarkup(problem)} />
     <dt>How I fixed it</dt>
-    <dd>{solution}</dd>
+    <dd set:html={inlineMarkup(solution)} />
   </dl>
 </article>
 

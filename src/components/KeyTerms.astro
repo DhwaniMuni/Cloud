@@ -1,0 +1,82 @@
+---
+/**
+ * "Key terms" panel, rendered from a topic's `keyTerms` frontmatter.
+ *
+ * The point of this block is that someone who knows nothing about the topic can
+ * read the vocabulary first and then follow the narrative. Uses <dl> so the
+ * term/definition pairing is structural, not just visual.
+ */
+import { inlineMarkup } from '../lib/inline-markup';
+
+interface Props {
+  terms: { term: string; definition: string }[];
+  /** Heading id, so the on-this-page rail can link to this section. */
+  id?: string;
+}
+
+const { terms, id = 'key-terms' } = Astro.props;
+---
+
+{
+  terms.length > 0 && (
+    <section class="key-terms" aria-labelledby={id}>
+      <h2 id={id} class="key-terms-heading">
+        Key terms
+      </h2>
+      <dl class="key-terms-list">
+        {terms.map((entry) => (
+          <div class="key-term">
+            <dt>{entry.term}</dt>
+            {/* Definitions use `code` and **bold**, which YAML keeps as literal text. */}
+            <dd set:html={inlineMarkup(entry.definition)} />
+          </div>
+        ))}
+      </dl>
+    </section>
+  )
+}
+
+<style>
+  .key-terms {
+    margin-top: var(--space-xl);
+    padding: var(--space-md) var(--space-lg);
+    background-color: var(--bg-subtle);
+    border: var(--border-width) solid var(--border);
+    border-radius: var(--radius-lg);
+    max-width: var(--measure);
+  }
+
+  .key-terms-heading {
+    margin: 0 0 var(--space-sm);
+    font-size: var(--text-2xs);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .key-terms-list {
+    margin: 0;
+    display: grid;
+    gap: var(--space-sm);
+  }
+
+  .key-term dt {
+    font-size: var(--text-sm);
+    font-weight: var(--weight-semibold);
+    color: var(--text);
+  }
+
+  .key-term dd {
+    margin: var(--space-3xs) 0 0;
+    font-size: var(--text-sm);
+    line-height: var(--leading-normal);
+    color: var(--text-secondary);
+  }
+
+  @media (max-width: 30rem) {
+    .key-terms {
+      padding: var(--space-sm) var(--space-md);
+    }
+  }
+</style>

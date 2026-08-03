@@ -6,8 +6,8 @@ import { site } from '../data/site';
 interface Props {
   title: string;
   description: string;
-  /** Which tab bar entry is active. */
-  current: 'overview' | 'skills' | number;
+  /** Which tab bar entry is active: a fixed tab, or a topic slug. */
+  current: 'overview' | 'skills' | (string & {});
 }
 
 const { title, description, current } = Astro.props;

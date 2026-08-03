@@ -63,7 +63,7 @@
   /* ── Layout ───────────────────────────────────────────────────────────── */
   --measure: 68ch; /* comfortable prose measure */
   --content-max: 46rem; /* single-column pages */
-  --page-max: 78rem; /* week page incl. the on-this-page rail */
+  --page-max: 78rem; /* topic page incl. the on-this-page rail */
   --rail-width: 15rem;
   --gutter: var(--space-md);
   --tabbar-height: 3.25rem;
@@ -368,7 +368,7 @@ a:hover {
 }
 
 /* ==========================================================================
-   Prose — the week body. Vertical rhythm and measure live here.
+   Prose — the topic body. Vertical rhythm and measure live here.
    ========================================================================== */
 
 .prose {
@@ -475,8 +475,11 @@ a:hover {
   text-transform: uppercase;
 }
 
-/* Inline code (not inside a highlighted block). */
-.prose :not(pre) > code {
+/* Inline code (not inside a highlighted block).
+   Global rather than `.prose`-scoped, because frontmatter-driven panels — key
+   terms, challenge cards, the learned list — render inline code too and sit
+   outside the prose wrapper. */
+:not(pre) > code {
   font-family: var(--font-mono);
   font-size: 0.875em;
   padding: 0.15em 0.4em;
