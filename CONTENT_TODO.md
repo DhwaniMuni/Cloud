@@ -1,48 +1,42 @@
 # Content checklist
 
-Tracks which weeks are written. A week is **done** when `draft: false` — that is
-what removes the "WIP" badge from the timeline and the week page.
+Tracks which topics are written. A topic is **done** when `draft: false` — that is
+what removes the "WIP" badge from the home page and the topic page.
 
-| Week | Title                                    | File                                  | Status |
-| ---- | ---------------------------------------- | ------------------------------------- | ------ |
-| 1    | Onboarding and the shape of the system   | [week-01-onboarding.mdx][w1]          | ☐ TODO |
-| 2    | Backend foundations: APIs and data       | [week-02-backend-foundations.mdx][w2] | ☐ TODO |
-| 3    | Cloud fundamentals on AWS                | [week-03-cloud-fundamentals.mdx][w3]  | ☐ TODO |
-| 4    | Frontend: building the client            | [week-04-frontend.mdx][w4]            | ☐ TODO |
-| 5    | DevOps: CI/CD end to end                 | [week-05-devops.mdx][w5]              | ☑ Done |
-| 6    | GenAI foundations: prompts and retrieval | [week-06-genai-foundations.mdx][w6]   | ☐ TODO |
-| 7    | Capstone prep: scoping and spikes        | [week-07-capstone-prep.mdx][w7]       | ☐ TODO |
-| 8    | Capstone: agentic RAG on Amazon Bedrock  | [week-08-capstone.mdx][w8]            | ☑ Done |
+| #   | Topic                                         | File                    | Status |
+| --- | --------------------------------------------- | ----------------------- | ------ |
+| 1   | API endpoints: how a URL becomes running code | [api-endpoints.mdx][t1] | ☑ Done |
 
-[w1]: src/content/weeks/week-01-onboarding.mdx
-[w2]: src/content/weeks/week-02-backend-foundations.mdx
-[w3]: src/content/weeks/week-03-cloud-fundamentals.mdx
-[w4]: src/content/weeks/week-04-frontend.mdx
-[w5]: src/content/weeks/week-05-devops.mdx
-[w6]: src/content/weeks/week-06-genai-foundations.mdx
-[w7]: src/content/weeks/week-07-capstone-prep.mdx
-[w8]: src/content/weeks/week-08-capstone.mdx
+[t1]: src/content/topics/api-endpoints.mdx
 
-## Per-week checklist
+## Next topics
 
-For each week, work through:
+The site is organised by topic, not by week, so topics get added as they are
+decided — there are no placeholder files waiting to be filled in. To add one,
+create a file in [src/content/topics/](src/content/topics/) following the schema
+in [README.md](README.md#frontmatter-fields).
 
-- [ ] `title` and `hook` say something specific — the hook is the one line on the timeline
-- [ ] `startDate` / `endDate` are correct
+## Per-topic checklist
+
+For each topic, work through:
+
+- [ ] `title` and `hook` say something specific — the hook is the one line on the home page
+- [ ] `tab` is short enough to read in the tab bar (max 20 chars)
+- [ ] `order` is unique across every topic; it sets both the tab order and prev/next
 - [ ] `goal` is one paragraph about the intended outcome, not a list of activities
+- [ ] `keyTerms` define every piece of jargon the body uses, before it is used
 - [ ] `tools` are all registered in [src/data/tools.ts](src/data/tools.ts)
 - [ ] `challenges` — real problem/solution pairs, with the actual cause named
-- [ ] `learned` — takeaways you'd give someone starting the same week
-- [ ] `artifacts` — real URLs (the placeholders point at `USERNAME/REPO`)
+- [ ] `learned` — takeaways you'd give someone starting from zero
+- [ ] `artifacts` — real URLs (placeholders point at `USERNAME/...`)
 - [ ] Body prose replaces every `TODO`
 - [ ] `draft: false`
 
 ## Placeholder URLs still to replace
 
-The written weeks (5 and 8) carry placeholder artifact links pointing at
-`https://github.com/USERNAME/REPO`. Search for `USERNAME/REPO` and replace with
-real URLs, or drop the entries.
+`api-endpoints.mdx` carries artifact links pointing at
+`https://github.com/USERNAME/resourcehub`. Search for `USERNAME` and replace with
+the real URLs, or drop the entries.
 
-Also in the written weeks: the `ArchitectureDiagram` bodies contain placeholder
-SVGs marked with a `TODO` comment. Replace them with real diagrams and update the
-`alt` text to describe what the final diagram actually shows.
+Also: `SITE` in [astro.config.mjs](astro.config.mjs) is still
+`https://USERNAME.github.io`.

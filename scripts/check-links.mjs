@@ -60,7 +60,7 @@ async function htmlFiles(dir) {
 }
 
 /**
- * The route a built file serves. `dist/week/5/index.html` → `/week/5`.
+ * The route a built file serves. `dist/topic/foo/index.html` → `/topic/foo`.
  * Trailing slashes and `index.html` are normalised away so both spellings match.
  */
 function routeFor(file) {

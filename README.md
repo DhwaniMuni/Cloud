@@ -1,8 +1,8 @@
 # IGNITE 2026
 
-A static portfolio site documenting eight weeks in the IGNITE 2026 early-career
-technology program. Ten pages: an overview timeline, one page per week, and a
-skills index derived from week frontmatter.
+A static portfolio site documenting what I learned in the IGNITE 2026 early-career
+technology program, organised **by topic** rather than by week. An overview page,
+one page per topic, and a skills index derived from topic frontmatter.
 
 Built with [Astro](https://astro.build) and MDX. No UI framework, no CMS, no
 runtime services — the output is plain static files.
@@ -25,15 +25,16 @@ npm run dev      # http://localhost:4321
 
 `check:links` runs against a build, so run `npm run build` first.
 
-## Adding or editing a week
+## Adding or editing a topic
 
-Each week is one file in [src/content/weeks/](src/content/weeks/). **Everything a
-week says lives in that file** — there is no component or TS file to touch. Edit
-the frontmatter and the body, and the timeline, tool chips, skills page, and
-prev/next links all update themselves.
+Each topic is one file in [src/content/topics/](src/content/topics/).
+**Everything a topic says lives in that file** — there is no component or TS file
+to touch. Edit the frontmatter and the body, and the home page list, the tab bar,
+the tool chips, the skills page, and the prev/next links all update themselves.
 
-The filename does not matter. The route comes from the `week` number in
-frontmatter, so `/week/5` stays `/week/5` no matter what you call the file.
+The filename becomes the route: `api-endpoints.mdx` is served at
+`/topic/api-endpoints`. The `order` field controls where it sits in the tab bar
+and the home page list — not the filename.
 
 ### Frontmatter fields
 
@@ -41,16 +42,19 @@ Validated by a Zod schema in [src/content.config.ts](src/content.config.ts). Bad
 content fails the build rather than rendering wrong.
 
 ```yaml
-week: 5 # 1–8, must be unique across files
-title: 'DevOps: CI/CD end to end'
-hook: 'One line, shown on the timeline. Max 200 chars.'
-startDate: 2026-07-06 # YYYY-MM-DD
-endDate: 2026-07-11 # must be >= startDate
-goal: 'One short paragraph: what the week was for.'
+order: 1 # must be unique; sets tab order and prev/next
+title: 'API endpoints: how a URL becomes running code'
+tab: 'API endpoints' # tab bar label; keep it short (max 20 chars)
+hook: 'One line, shown on the home page. Max 200 chars.'
+goal: 'One short paragraph: what you set out to do.'
 
-tools: # must all exist in src/data/tools.ts
-  - Docker
-  - Amazon ECS
+tools: # must all exist in src/data/tools.ts; at least one
+  - Spring Boot
+  - Amazon DynamoDB
+
+keyTerms: # definitions panel, rendered before the body
+  - term: Payload
+    definition: 'The body of the request — the data itself, not the address.'
 
 challenges: # problem/solution pairs; omit or leave [] to hide the section
   - title: 'Short title'
@@ -66,19 +70,30 @@ artifacts: # kind is one of: repo | pr | doc | demo
     kind: repo
 
 images: # optional; alt text is required and cannot be empty
-  - src: '/images/week-5/pipeline.png'
-    alt: 'The CodePipeline console showing four green stages.'
+  - src: '/images/api-endpoints/postman.png'
+    alt: 'A Postman DELETE request returning 204 No Content.'
     caption: 'Optional caption.'
 
-draft: true # default. true shows a "WIP" badge; set false when the week is done
+featured: false # at most one topic may be true; it gets the "Start here" callout
+draft: true # default. true shows a "WIP" badge; set false when the topic is done
 ```
 
 **Sections with no content are omitted entirely.** An empty `challenges` list
 means no "Challenges" heading, and no entry for it in the on-this-page rail.
 
+### Section order on a topic page
+
+1. Header — title, hook, tool chips
+2. What I set out to do — `goal`
+3. Key terms — `keyTerms`
+4. How it works — the MDX body
+5. Challenges & how I solved them — `challenges`
+6. What I learned — `learned`
+7. Artifacts — `artifacts` and `images`
+
 ### The body
 
-Everything after the frontmatter is the "What I worked on" section. Use `##` and
+Everything after the frontmatter becomes the "How it works" section. Use `##` and
 `###` headings freely — the sticky on-this-page rail is generated from them at
 build time.
 
@@ -115,18 +130,18 @@ Fenced code blocks get a language label, a copy button, and horizontal scrolling
 automatically — just use a language tag:
 
 ````md
-```dockerfile
-FROM eclipse-temurin:21-jre-alpine
+```java
+@GetMapping("/{resourceId}")
 ```
 ````
 
 ### Where images go
 
-Put them in `public/images/week-<n>/` and reference them from the repo root:
+Put them in `public/images/<topic-slug>/` and reference them from the repo root:
 
 ```yaml
 images:
-  - src: '/images/week-5/pipeline.png'
+  - src: '/images/api-endpoints/postman.png'
     alt: 'Describe what the image shows, not its filename.'
 ```
 
@@ -137,7 +152,7 @@ image gets a proper `figure`/`figcaption`.
 
 ### Registering a new tool
 
-A tool must exist in [src/data/tools.ts](src/data/tools.ts) before a week can
+A tool must exist in [src/data/tools.ts](src/data/tools.ts) before a topic can
 reference it. Add one entry:
 
 ```ts
@@ -150,9 +165,9 @@ Categories are `Cloud`, `DevOps`, `GenAI`, `Backend`, `Frontend`, `Practices`.
 Referencing an unregistered tool is a **build error** listing every valid name —
 that is deliberate, so a typo can't produce a silently miscategorised chip.
 
-The `/skills` page is generated from the union of every week's `tools`, grouped by
-category, with each tool linked to the weeks it appeared in. Never edit it by
-hand. Registry entries no week references simply don't appear.
+The `/skills` page is generated from the union of every topic's `tools`, grouped
+by category, with each tool linked to the topics it appeared in. Never edit it by
+hand. Registry entries no topic references simply don't appear.
 
 ## Design notes
 
@@ -176,15 +191,18 @@ The two values that control URLs are at the top of
 
 ```js
 const SITE = 'https://USERNAME.github.io'; // TODO: your Pages origin
-const BASE = process.env.GITHUB_ACTIONS ? '/ignite-2026' : '/';
+const BASE = env?.GITHUB_ACTIONS ? '/ignite-2026' : '/';
 ```
 
-`BASE` is conditional so local builds serve from the root (`/week/5`) while CI
-builds get the repo prefix Pages needs (`/ignite-2026/week/5`). To reproduce a
-production build locally, set the variable yourself:
+`BASE` is conditional so local builds serve from the root
+(`/topic/api-endpoints`) while CI builds get the repo prefix Pages needs
+(`/ignite-2026/topic/api-endpoints`). To reproduce a production build locally, set
+the variable yourself — on **both** commands, since the link checker reads `base`
+from the same config:
 
 ```bash
-GITHUB_ACTIONS=true npm run build && npm run check:links
+GITHUB_ACTIONS=true npm run build
+GITHUB_ACTIONS=true npm run check:links
 ```
 
 **Using a custom domain instead?** Set `SITE` to the domain
@@ -193,7 +211,7 @@ GITHUB_ACTIONS=true npm run build && npm run check:links
 repo prefix automatically — links are built through the helpers in
 [src/lib/paths.ts](src/lib/paths.ts), so nothing else needs changing.
 
-Always build internal links with those helpers (`path()`, `weekPath()`) rather
+Always build internal links with those helpers (`path()`, `topicPath()`) rather
 than writing `href="/skills"` directly. A bare root-relative link works in dev
 and 404s under a base path.
 
@@ -201,18 +219,18 @@ and 404s under a base path.
 
 ```
 src/
-  content/weeks/     one .mdx file per week — the only place content lives
+  content/topics/    one .mdx file per topic — the only place content lives
   content.config.ts  Zod schema; validates frontmatter at build time
   data/
     tools.ts         tools registry: category + optional docs URL
     site.ts          your name, program name, hero summary
-  components/        TabBar, Timeline, ToolChip, Callout, diagrams, …
-  layouts/           BaseLayout (shell, theme script), WeekLayout (week shell)
-  lib/               path helpers, date formatting, week data access
+  components/        TabBar, TopicCard, ToolChip, KeyTerms, Callout, diagrams, …
+  layouts/           BaseLayout (shell, theme script), TopicLayout (topic shell)
+  lib/               path helpers, topic data access, Shiki transformer
   pages/
-    index.astro      overview timeline
+    index.astro      overview + topic list
     skills.astro     derived skills index
-    week/[...slug].astro   one page per week
+    topic/[...slug].astro   one page per topic
   styles/theme.css   every design token
 scripts/
   check-links.mjs    internal link checker (Node built-ins only)
@@ -221,5 +239,5 @@ public/              static assets, served from the root
 
 ## What's tracked
 
-[CONTENT_TODO.md](CONTENT_TODO.md) tracks which weeks are written. Weeks 5 and 8
-are done; the rest are structured placeholders.
+[CONTENT_TODO.md](CONTENT_TODO.md) tracks which topics are written and what
+placeholder URLs still need replacing.

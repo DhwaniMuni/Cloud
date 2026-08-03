@@ -8,7 +8,13 @@ import { transformerCodeMeta } from './src/lib/shiki-transformers.mjs';
 // Using a custom domain? See the "Deployment" section of README.md —
 // set SITE to your domain and BASE to '/'.
 const SITE = 'https://USERNAME.github.io';
-const BASE = process.env.GITHUB_ACTIONS ? '/ignite-2026' : '/';
+
+// `process` is cast through globalThis so `astro check` does not require
+// @types/node just for this one lookup.
+const env = /** @type {{ env?: Record<string, string | undefined> }} */ (
+  /** @type {any} */ (globalThis).process
+).env;
+const BASE = env?.GITHUB_ACTIONS ? '/ignite-2026' : '/';
 
 export default defineConfig({
   site: SITE,
