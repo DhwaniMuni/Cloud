@@ -1,0 +1,19 @@
+/** @type {import('prettier').Config} */
+export default {
+  printWidth: 100,
+  singleQuote: true,
+  semi: true,
+  trailingComma: 'all',
+  plugins: ['prettier-plugin-astro'],
+  overrides: [
+    {
+      files: '*.astro',
+      options: { parser: 'astro' },
+    },
+    {
+      // Prose wraps at the same measure the site renders it at.
+      files: ['*.md', '*.mdx'],
+      options: { proseWrap: 'preserve' },
+    },
+  ],
+};
