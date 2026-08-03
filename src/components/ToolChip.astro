@@ -1,0 +1,78 @@
+---
+import { categoryOf, toolSlug, type ToolCategory } from '../data/tools';
+import { skillsAnchor } from '../lib/paths';
+
+/**
+ * One tool chip. Links to its entry on /skills.
+ *
+ * Chips stay neutral-toned; the category only shifts the background hue very
+ * slightly, so a row of ten chips reads as one texture rather than confetti.
+ */
+interface Props {
+  name: string;
+  /** Smaller variant for dense rows (timeline entries). */
+  size?: 'sm' | 'md';
+}
+
+const { name, size = 'md' } = Astro.props;
+
+const category: ToolCategory = categoryOf(name);
+const slug = toolSlug(name);
+---
+
+<a
+  href={skillsAnchor(slug)}
+  class:list={['chip', `chip-${category.toLowerCase()}`, `chip-${size}`]}
+  data-category={category}
+>
+  {name}
+</a>
+
+<style>
+  .chip {
+    display: inline-block;
+    padding: 0.1rem var(--space-2xs);
+    background-color: var(--chip-bg);
+    color: var(--chip-text);
+    border: var(--border-width) solid var(--chip-border);
+    border-radius: var(--radius-pill);
+    font-size: var(--text-xs);
+    font-weight: var(--weight-medium);
+    line-height: 1.6;
+    white-space: nowrap;
+    text-decoration: none;
+    transition:
+      color var(--duration-fast) var(--ease-out),
+      border-color var(--duration-fast) var(--ease-out);
+  }
+
+  .chip:hover {
+    color: var(--text);
+    border-color: var(--text-muted);
+  }
+
+  .chip-sm {
+    font-size: var(--text-2xs);
+    padding: 0.05rem 0.45rem;
+  }
+
+  /* Category = subtle hue shift only. */
+  .chip-cloud {
+    background-color: var(--chip-tint-cloud);
+  }
+  .chip-devops {
+    background-color: var(--chip-tint-devops);
+  }
+  .chip-genai {
+    background-color: var(--chip-tint-genai);
+  }
+  .chip-backend {
+    background-color: var(--chip-tint-backend);
+  }
+  .chip-frontend {
+    background-color: var(--chip-tint-frontend);
+  }
+  .chip-practices {
+    background-color: var(--chip-tint-practices);
+  }
+</style>

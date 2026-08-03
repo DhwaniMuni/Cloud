@@ -1,0 +1,122 @@
+---
+/**
+ * Callout — usable directly inside MDX:
+ *
+ *   <Callout variant="insight" title="Why the agent won">
+ *     One InvokeAgent call replaced ~200 lines of orchestration.
+ *   </Callout>
+ */
+interface Props {
+  variant?: 'note' | 'warning' | 'insight';
+  /** Optional heading. Rendered as strong text, not a heading element, so it
+   *  never disturbs the page's h2/h3 outline or the on-this-page rail. */
+  title?: string;
+}
+
+const { variant = 'note', title } = Astro.props;
+
+const LABELS = {
+  note: 'Note',
+  warning: 'Warning',
+  insight: 'Insight',
+} as const;
+
+const label = LABELS[variant];
+---
+
+<aside class:list={['callout', `callout-${variant}`]} aria-label={title ? undefined : label}>
+  <p class="callout-label">
+    <span class="callout-icon" aria-hidden="true">
+      {
+        variant === 'warning' ? (
+          <svg viewBox="0 0 16 16" fill="none">
+            <path
+              d="M8 2.2 14.4 13.4H1.6L8 2.2Z"
+              stroke="currentColor"
+              stroke-width="1.4"
+              stroke-linejoin="round"
+            />
+            <path d="M8 6.4v3.1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+            <circle cx="8" cy="11.5" r="0.8" fill="currentColor" />
+          </svg>
+        ) : variant === 'insight' ? (
+          <svg viewBox="0 0 16 16" fill="none">
+            <path
+              d="M8 1.8a4.4 4.4 0 0 1 2.6 7.9v1.6H5.4V9.7A4.4 4.4 0 0 1 8 1.8Z"
+              stroke="currentColor"
+              stroke-width="1.4"
+              stroke-linejoin="round"
+            />
+            <path
+              d="M6.2 13.4h3.6"
+              stroke="currentColor"
+              stroke-width="1.4"
+              stroke-linecap="round"
+            />
+          </svg>
+        ) : (
+          <svg viewBox="0 0 16 16" fill="none">
+            <circle cx="8" cy="8" r="6.3" stroke="currentColor" stroke-width="1.4" />
+            <path d="M8 7.2v4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+            <circle cx="8" cy="4.9" r="0.85" fill="currentColor" />
+          </svg>
+        )
+      }
+    </span>
+    {title ?? label}
+  </p>
+  <div class="callout-body">
+    <slot />
+  </div>
+</aside>
+
+<style>
+  .callout {
+    margin-block: var(--space-lg);
+    padding: var(--space-sm) var(--space-md);
+    border-left: 3px solid var(--callout-border);
+    border-radius: var(--radius-sm);
+    background-color: var(--callout-bg);
+    font-size: var(--text-sm);
+    line-height: var(--leading-normal);
+  }
+
+  .callout-note {
+    --callout-bg: var(--note-bg);
+    --callout-border: var(--note-border);
+  }
+  .callout-warning {
+    --callout-bg: var(--warning-bg);
+    --callout-border: var(--warning-border);
+  }
+  .callout-insight {
+    --callout-bg: var(--insight-bg);
+    --callout-border: var(--insight-border);
+  }
+
+  .callout-label {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3xs);
+    margin: 0 0 var(--space-3xs);
+    font-size: var(--text-xs);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--text-secondary);
+  }
+
+  .callout-icon {
+    display: inline-flex;
+    width: 0.9rem;
+    height: 0.9rem;
+  }
+
+  .callout-body :global(> * + *) {
+    margin-top: var(--space-2xs);
+  }
+
+  .callout-body :global(p) {
+    margin: 0;
+  }
+</style>

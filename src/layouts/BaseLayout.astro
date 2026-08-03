@@ -1,0 +1,98 @@
+---
+import '../styles/theme.css';
+import TabBar from '../components/TabBar.astro';
+import { site } from '../data/site';
+
+interface Props {
+  title: string;
+  description: string;
+  /** Which tab bar entry is active. */
+  current: 'overview' | 'skills' | number;
+}
+
+const { title, description, current } = Astro.props;
+
+const pageTitle = `${title} · ${site.program}`;
+const canonical = Astro.site ? new URL(Astro.url.pathname, Astro.site).href : undefined;
+const year = new Date().getFullYear();
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{pageTitle}</title>
+    <meta name="description" content={description} />
+    {canonical && <link rel="canonical" href={canonical} />}
+    <meta name="author" content={site.author} />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={description} />
+    <meta name="generator" content={Astro.generator} />
+    <link rel="icon" href="data:," />
+
+    {
+      /*
+      No-flash theme resolution. This runs before the first paint and is
+      deliberately inline + blocking: a deferred script would paint the wrong
+      theme first. `is:inline` keeps Astro from bundling it.
+    */
+    }
+    <script is:inline>
+      (() => {
+        try {
+          const stored = localStorage.getItem('theme');
+          if (stored === 'light' || stored === 'dark') {
+            document.documentElement.dataset.theme = stored;
+          } else {
+            document.documentElement.dataset.theme = window.matchMedia(
+              '(prefers-color-scheme: dark)',
+            ).matches
+              ? 'dark'
+              : 'light';
+          }
+        } catch {
+          /* localStorage blocked — the prefers-color-scheme fallback in CSS covers us. */
+        }
+      })();
+    </script>
+  </head>
+
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <TabBar current={current} />
+
+    <main id="main">
+      <slot />
+    </main>
+
+    <footer class="site-footer">
+      <p>{site.author} · {site.program}</p>
+      <p class="footer-meta">Built with Astro. &copy; {year}</p>
+    </footer>
+  </body>
+</html>
+
+<style>
+  main {
+    flex: 1;
+  }
+
+  .site-footer {
+    margin-top: var(--space-3xl);
+    padding: var(--space-lg) var(--gutter);
+    border-top: var(--border-width) solid var(--border);
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2xs) var(--space-md);
+    justify-content: space-between;
+    align-items: baseline;
+  }
+
+  .footer-meta {
+    font-size: var(--text-xs);
+  }
+</style>

@@ -1,0 +1,471 @@
+---
+import BaseLayout from './BaseLayout.astro';
+import OnThisPage, { type Heading } from '../components/OnThisPage.astro';
+import CodeBlockEnhancer from '../components/CodeBlockEnhancer.astro';
+import ToolChip from '../components/ToolChip.astro';
+import ChallengeCard from '../components/ChallengeCard.astro';
+import { formatDateRange, isoDate } from '../lib/format';
+import { weekPath, asset } from '../lib/paths';
+import type { CollectionEntry } from 'astro:content';
+
+interface Props {
+  entry: CollectionEntry<'weeks'>;
+  /** Headings from the rendered MDX body, used to build the rail. */
+  bodyHeadings: Heading[];
+  prev?: { week: number; title: string };
+  next?: { week: number; title: string };
+  /** True when the MDX body has renderable content. */
+  hasBody: boolean;
+}
+
+const { entry, bodyHeadings, prev, next, hasBody } = Astro.props;
+const {
+  week,
+  title,
+  hook,
+  startDate,
+  endDate,
+  goal,
+  tools,
+  challenges,
+  learned,
+  artifacts,
+  images,
+  draft,
+} = entry.data;
+
+// Sections with no content are omitted entirely — both the section itself and
+// its entry in the on-this-page rail.
+const sections = {
+  goal: goal.trim().length > 0,
+  work: hasBody,
+  challenges: challenges.length > 0,
+  learned: learned.length > 0,
+  artifacts: artifacts.length > 0 || images.length > 0,
+};
+
+/**
+ * The rail lists the page's own section headings plus the h2/h3s the MDX body
+ * contributes. Body headings are nested under "What I worked on", which is
+ * where the body renders.
+ */
+const headings: Heading[] = [
+  ...(sections.goal ? [{ depth: 2, slug: 'goal', text: 'Goal for the week' }] : []),
+  ...(sections.work ? [{ depth: 2, slug: 'work', text: 'What I worked on' }, ...bodyHeadings] : []),
+  ...(sections.challenges
+    ? [{ depth: 2, slug: 'challenges', text: 'Challenges & how I solved them' }]
+    : []),
+  ...(sections.learned ? [{ depth: 2, slug: 'learned', text: 'What I learned' }] : []),
+  ...(sections.artifacts ? [{ depth: 2, slug: 'artifacts', text: 'Artifacts' }] : []),
+];
+
+const KIND_LABELS = { repo: 'Repo', pr: 'PR', doc: 'Doc', demo: 'Demo' } as const;
+
+const dateRange = formatDateRange(startDate, endDate);
+---
+
+<BaseLayout title={`Week ${week}: ${title}`} description={hook} current={week}>
+  <div class="week-page">
+    <article class="week-content">
+      <header class="week-header">
+        <p class="week-eyebrow">
+          <span class="week-number">Week {week}</span>
+          <time datetime={isoDate(startDate)}>{dateRange}</time>
+          {draft && <span class="wip-badge">WIP</span>}
+        </p>
+        <h1>{title}</h1>
+        <p class="week-hook">{hook}</p>
+        {
+          tools.length > 0 && (
+            <>
+              <h2 class="visually-hidden">Tools used this week</h2>
+              <ul class="chip-row" aria-label="Tools used this week">
+                {tools.map((tool) => (
+                  <li>
+                    <ToolChip name={tool} />
+                  </li>
+                ))}
+              </ul>
+            </>
+          )
+        }
+      </header>
+
+      {/* Mobile disclosure renders here; the desktop rail is in the aside. */}
+      <div class="toc-mobile">
+        <OnThisPage headings={headings} variant="disclosure" />
+      </div>
+
+      {
+        sections.goal && (
+          <section class="week-section" aria-labelledby="goal">
+            <h2 id="goal">Goal for the week</h2>
+            <p class="goal-text">{goal}</p>
+          </section>
+        )
+      }
+
+      {
+        sections.work && (
+          <section class="week-section" aria-labelledby="work">
+            <h2 id="work">What I worked on</h2>
+            <div class="prose">
+              <slot />
+            </div>
+          </section>
+        )
+      }
+
+      {
+        sections.challenges && (
+          <section class="week-section" aria-labelledby="challenges">
+            <h2 id="challenges">Challenges &amp; how I solved them</h2>
+            <div class="challenge-grid">
+              {challenges.map((challenge) => (
+                <ChallengeCard
+                  title={challenge.title}
+                  problem={challenge.problem}
+                  solution={challenge.solution}
+                />
+              ))}
+            </div>
+          </section>
+        )
+      }
+
+      {
+        sections.learned && (
+          <section class="week-section" aria-labelledby="learned">
+            <h2 id="learned">What I learned</h2>
+            <ul class="learned-list">
+              {learned.map((item) => (
+                <li>{item}</li>
+              ))}
+            </ul>
+          </section>
+        )
+      }
+
+      {
+        sections.artifacts && (
+          <section class="week-section" aria-labelledby="artifacts">
+            <h2 id="artifacts">Artifacts</h2>
+            {artifacts.length > 0 && (
+              <ul class="artifact-list">
+                {artifacts.map((artifact) => (
+                  <li>
+                    <a href={artifact.url} class="artifact-link">
+                      <span class="artifact-kind">{KIND_LABELS[artifact.kind]}</span>
+                      <span>{artifact.label}</span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {images.length > 0 && (
+              <div class="artifact-figures">
+                {images.map((image) => (
+                  <figure>
+                    <img
+                      src={image.src.startsWith('http') ? image.src : asset(image.src)}
+                      alt={image.alt}
+                      loading="lazy"
+                      decoding="async"
+                    />
+                    {image.caption && <figcaption>{image.caption}</figcaption>}
+                  </figure>
+                ))}
+              </div>
+            )}
+          </section>
+        )
+      }
+
+      <nav class="week-nav" aria-label="Adjacent weeks">
+        {
+          prev ? (
+            <a href={weekPath(prev.week)} class="week-nav-link week-nav-prev" rel="prev">
+              <span class="week-nav-dir">← Week {prev.week}</span>
+              <span class="week-nav-title">{prev.title}</span>
+            </a>
+          ) : (
+            <span />
+          )
+        }
+        {
+          next && (
+            <a href={weekPath(next.week)} class="week-nav-link week-nav-next" rel="next">
+              <span class="week-nav-dir">Week {next.week} →</span>
+              <span class="week-nav-title">{next.title}</span>
+            </a>
+          )
+        }
+      </nav>
+    </article>
+
+    <aside class="week-rail">
+      <OnThisPage headings={headings} variant="rail" />
+    </aside>
+  </div>
+
+  <CodeBlockEnhancer />
+</BaseLayout>
+
+<style>
+  .week-page {
+    max-width: var(--page-max);
+    margin-inline: auto;
+    padding: var(--space-xl) var(--gutter) 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-xl);
+  }
+
+  .week-content {
+    min-width: 0;
+  }
+
+  /* ── Header ─────────────────────────────────────────────────────────────── */
+
+  .week-header {
+    padding-bottom: var(--space-lg);
+    border-bottom: var(--border-width) solid var(--border);
+  }
+
+  .week-eyebrow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2xs);
+    margin-bottom: var(--space-2xs);
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+  }
+
+  .week-number {
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    font-size: var(--text-xs);
+    color: var(--accent);
+  }
+
+  .wip-badge {
+    padding: 0.05rem var(--space-2xs);
+    background-color: var(--warning-bg);
+    border: var(--border-width) solid var(--warning-border);
+    border-radius: var(--radius-pill);
+    font-size: var(--text-2xs);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-wide);
+    color: var(--text-secondary);
+  }
+
+  .week-header h1 {
+    font-size: var(--text-4xl);
+    max-width: 34ch;
+  }
+
+  .week-hook {
+    margin-top: var(--space-2xs);
+    max-width: var(--measure);
+    font-size: var(--text-lg);
+    line-height: var(--leading-snug);
+    color: var(--text-secondary);
+  }
+
+  .chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3xs);
+    margin: var(--space-md) 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* ── Sections ───────────────────────────────────────────────────────────── */
+
+  .week-section {
+    margin-top: var(--space-2xl);
+  }
+
+  .week-section > h2 {
+    margin-bottom: var(--space-md);
+    font-size: var(--text-2xl);
+  }
+
+  .goal-text {
+    max-width: var(--measure);
+    font-size: var(--text-lg);
+    line-height: var(--leading-relaxed);
+    color: var(--text-secondary);
+  }
+
+  .challenge-grid {
+    display: grid;
+    gap: var(--space-sm);
+    max-width: var(--measure);
+  }
+
+  .learned-list {
+    max-width: var(--measure);
+    padding-left: var(--space-md);
+    line-height: var(--leading-relaxed);
+  }
+
+  .learned-list li + li {
+    margin-top: var(--space-2xs);
+  }
+
+  .artifact-list {
+    display: grid;
+    gap: var(--space-3xs);
+    max-width: var(--measure);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .artifact-link {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2xs);
+    padding: var(--space-2xs) var(--space-xs);
+    background-color: var(--bg-raised);
+    border: var(--border-width) solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-sm);
+    text-decoration: none;
+    color: var(--text);
+    transition: border-color var(--duration-fast) var(--ease-out);
+  }
+
+  .artifact-link:hover {
+    border-color: var(--accent-border);
+    color: var(--accent);
+  }
+
+  .artifact-kind {
+    flex: 0 0 auto;
+    min-width: 2.75rem;
+    text-align: center;
+    padding: 0.05rem var(--space-3xs);
+    background-color: var(--bg-inset);
+    border-radius: var(--radius-xs);
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    font-weight: var(--weight-medium);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-wide);
+    color: var(--text-muted);
+  }
+
+  .artifact-figures {
+    display: grid;
+    gap: var(--space-md);
+    margin-top: var(--space-md);
+    max-width: var(--measure);
+  }
+
+  .artifact-figures figure {
+    margin: 0;
+  }
+
+  .artifact-figures img {
+    width: 100%;
+    border: var(--border-width) solid var(--border);
+    border-radius: var(--radius-md);
+  }
+
+  .artifact-figures figcaption {
+    margin-top: var(--space-3xs);
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+  }
+
+  /* ── Prev / next ────────────────────────────────────────────────────────── */
+
+  .week-nav {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-sm);
+    margin-top: var(--space-3xl);
+    padding-top: var(--space-lg);
+    border-top: var(--border-width) solid var(--border);
+  }
+
+  .week-nav-link {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3xs);
+    padding: var(--space-xs) var(--space-sm);
+    background-color: var(--bg-raised);
+    border: var(--border-width) solid var(--border);
+    border-radius: var(--radius-md);
+    text-decoration: none;
+    color: var(--text);
+    transition: border-color var(--duration-fast) var(--ease-out);
+  }
+
+  .week-nav-link:hover {
+    border-color: var(--accent-border);
+  }
+
+  .week-nav-next {
+    text-align: right;
+  }
+
+  .week-nav-dir {
+    font-size: var(--text-xs);
+    font-weight: var(--weight-medium);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  .week-nav-title {
+    font-size: var(--text-sm);
+    line-height: var(--leading-snug);
+    color: var(--text-secondary);
+  }
+
+  /* ── Rail placement ─────────────────────────────────────────────────────── */
+
+  .week-rail {
+    display: none;
+  }
+
+  .toc-mobile {
+    margin-top: var(--space-lg);
+  }
+
+  @media (min-width: 64rem) {
+    .week-page {
+      /* Content column first in the DOM, rail second — a natural tab order. */
+      grid-template-columns: minmax(0, 1fr) var(--rail-width);
+      gap: var(--space-2xl);
+    }
+
+    .week-rail {
+      display: block;
+    }
+
+    .toc-mobile {
+      display: none;
+    }
+  }
+
+  @media (max-width: 30rem) {
+    .week-header h1 {
+      font-size: var(--text-3xl);
+    }
+
+    .week-nav {
+      grid-template-columns: 1fr;
+    }
+
+    .week-nav-next {
+      text-align: left;
+    }
+  }
+</style>

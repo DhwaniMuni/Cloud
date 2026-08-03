@@ -1,0 +1,77 @@
+---
+/**
+ * Slot-based figure for a hand-authored inline SVG or an imported image.
+ *
+ *   <ArchitectureDiagram caption="Request path through CloudFront to ECS."
+ *                        alt="Browser hits CloudFront, which routes to an ALB and ECS tasks.">
+ *     <svg …>…</svg>
+ *   </ArchitectureDiagram>
+ *
+ * Accessibility contract: an inline SVG has no alt attribute, so pass `alt`
+ * with a text equivalent and it is exposed via role="img" + aria-label on the
+ * wrapper. If the diagram is purely decorative, pass `decorative`.
+ */
+interface Props {
+  /** Visible caption below the diagram. */
+  caption: string;
+  /**
+   * Text equivalent of the diagram's content, for screen readers. Required
+   * unless `decorative` — a caption alone rarely describes the structure.
+   */
+  alt?: string;
+  /** Marks the graphic aria-hidden; use only when the prose fully covers it. */
+  decorative?: boolean;
+}
+
+const { caption, alt, decorative = false } = Astro.props;
+---
+
+<figure class="architecture">
+  <div
+    class="architecture-frame"
+    role={decorative ? undefined : 'img'}
+    aria-label={decorative ? undefined : alt}
+    aria-hidden={decorative ? 'true' : undefined}
+  >
+    <slot />
+  </div>
+  <figcaption>{caption}</figcaption>
+</figure>
+
+<style>
+  .architecture {
+    margin-block: var(--space-lg);
+    width: 100%;
+  }
+
+  .architecture-frame {
+    padding: var(--space-md);
+    background-color: var(--bg-subtle);
+    border: var(--border-width) solid var(--border);
+    border-radius: var(--radius-md);
+    overflow-x: auto;
+  }
+
+  /* Inline SVGs scale to the frame; raster images keep their aspect ratio. */
+  .architecture-frame :global(svg) {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-width: 100%;
+    color: var(--text-secondary);
+  }
+
+  .architecture-frame :global(img) {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: var(--radius-sm);
+  }
+
+  figcaption {
+    margin-top: var(--space-2xs);
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    line-height: var(--leading-snug);
+  }
+</style>

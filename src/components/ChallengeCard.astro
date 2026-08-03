@@ -1,0 +1,68 @@
+---
+/**
+ * One problem/solution pair from a week's `challenges` frontmatter.
+ *
+ * Uses <dl> so the problem/solution relationship is conveyed structurally,
+ * not just visually.
+ */
+interface Props {
+  title: string;
+  problem: string;
+  solution: string;
+  /** Heading level to render the card title at, matching its section context. */
+  headingLevel?: 3 | 4;
+}
+
+const { title, problem, solution, headingLevel = 3 } = Astro.props;
+const Heading = `h${headingLevel}` as 'h3' | 'h4';
+---
+
+<article class="challenge">
+  <Heading class="challenge-title">{title}</Heading>
+  <dl class="challenge-body">
+    <dt>What went wrong</dt>
+    <dd>{problem}</dd>
+    <dt>How I fixed it</dt>
+    <dd>{solution}</dd>
+  </dl>
+</article>
+
+<style>
+  .challenge {
+    padding: var(--space-md);
+    background-color: var(--bg-raised);
+    border: var(--border-width) solid var(--border);
+    border-radius: var(--radius-md);
+  }
+
+  .challenge-title {
+    margin: 0 0 var(--space-xs);
+    font-size: var(--text-lg);
+    letter-spacing: var(--tracking-normal);
+  }
+
+  .challenge-body {
+    margin: 0;
+    display: grid;
+    gap: var(--space-3xs);
+  }
+
+  .challenge-body dt {
+    font-size: var(--text-2xs);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .challenge-body dd {
+    margin: 0 0 var(--space-2xs);
+    font-size: var(--text-sm);
+    line-height: var(--leading-normal);
+    color: var(--text-secondary);
+  }
+
+  .challenge-body dd:last-child {
+    margin-bottom: 0;
+  }
+</style>

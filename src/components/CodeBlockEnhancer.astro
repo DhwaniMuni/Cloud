@@ -1,0 +1,138 @@
+---
+/**
+ * Adds the language label and a copy button to every Shiki code block on the
+ * page. Include once per layout that renders prose.
+ *
+ * Progressive enhancement: the code block is fully readable and scrollable with
+ * no JS; the script only adds the copy affordance. The language label itself is
+ * pure CSS off the `data-language` attribute set by our Shiki transformer.
+ */
+---
+
+<style is:global>
+  /* Wrapper is injected by the script below. Without JS, the <pre> just renders
+     as normal — hence the label styles hang off the wrapper only. */
+  .code-block {
+    position: relative;
+    margin-block: var(--space-md);
+  }
+
+  .code-block-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2xs);
+    padding: var(--space-3xs) var(--space-2xs) var(--space-3xs) var(--space-xs);
+    background-color: var(--bg-subtle);
+    border: var(--border-width) solid var(--border);
+    border-bottom: 0;
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+  }
+
+  .code-block-lang {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    font-weight: var(--weight-medium);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .code-block .copy-button {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-3xs);
+    padding: 0.15rem var(--space-2xs);
+    background-color: transparent;
+    color: var(--text-muted);
+    border: var(--border-width) solid transparent;
+    border-radius: var(--radius-sm);
+    font-size: var(--text-2xs);
+    font-weight: var(--weight-medium);
+    cursor: pointer;
+    transition:
+      color var(--duration-fast) var(--ease-out),
+      border-color var(--duration-fast) var(--ease-out);
+  }
+
+  .code-block .copy-button:hover {
+    color: var(--text);
+    border-color: var(--border-strong);
+  }
+
+  .code-block .copy-button svg {
+    width: 0.8rem;
+    height: 0.8rem;
+  }
+
+  /* When the bar is present, the pre joins onto it seamlessly. */
+  .code-block > pre {
+    margin-top: 0 !important;
+    border-top-left-radius: 0 !important;
+    border-top-right-radius: 0 !important;
+  }
+</style>
+
+<script>
+  const COPY_ICON = `<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.6" stroke="currentColor" stroke-width="1.3"/><path d="M10.5 3.2A1.7 1.7 0 0 0 8.8 2H4.2A1.7 1.7 0 0 0 2.5 3.7v4.6c0 .74.47 1.37 1.13 1.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>`;
+  const DONE_ICON = `<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.2 8.6l3 3 6.6-6.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+  function enhance(pre: HTMLPreElement) {
+    if (pre.parentElement?.classList.contains('code-block')) return;
+
+    const language = pre.dataset.language;
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'code-block';
+
+    const bar = document.createElement('div');
+    bar.className = 'code-block-bar';
+
+    const label = document.createElement('span');
+    label.className = 'code-block-lang';
+    label.textContent = language ?? 'code';
+    bar.append(label);
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'copy-button';
+    button.innerHTML = `${COPY_ICON}<span class="copy-label">Copy</span>`;
+    button.setAttribute(
+      'aria-label',
+      language ? `Copy ${language} code to clipboard` : 'Copy code to clipboard',
+    );
+    bar.append(button);
+
+    pre.parentNode?.insertBefore(wrapper, pre);
+    wrapper.append(bar, pre);
+
+    let resetTimer: number | undefined;
+
+    button.addEventListener('click', async () => {
+      const code = pre.querySelector('code')?.textContent ?? '';
+      try {
+        await navigator.clipboard.writeText(code);
+      } catch {
+        return; // clipboard blocked (insecure context / denied permission)
+      }
+      button.innerHTML = `${DONE_ICON}<span class="copy-label">Copied</span>`;
+      // Announce to screen readers without moving focus.
+      button.setAttribute('aria-label', 'Code copied to clipboard');
+      window.clearTimeout(resetTimer);
+      resetTimer = window.setTimeout(() => {
+        button.innerHTML = `${COPY_ICON}<span class="copy-label">Copy</span>`;
+        button.setAttribute(
+          'aria-label',
+          language ? `Copy ${language} code to clipboard` : 'Copy code to clipboard',
+        );
+      }, 2000);
+    });
+  }
+
+  // Only add the button when the API actually exists.
+  if (navigator.clipboard) {
+    document
+      .querySelectorAll<HTMLPreElement>('.prose pre.astro-code')
+      .forEach((pre) => enhance(pre));
+  }
+</script>

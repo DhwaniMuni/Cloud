@@ -1,0 +1,221 @@
+---
+/**
+ * Sticky "On this page" rail.
+ *
+ * The heading list is built at BUILD time from the rendered content's headings
+ * (passed in as `headings`), not scraped from the DOM — so it exists with JS
+ * disabled and needs no layout shift. The script only adds scroll highlighting.
+ *
+ * Two variants, rendered in different places by WeekLayout and shown/hidden by
+ * CSS at the same breakpoint:
+ *   - `rail`       — sticky rail beside the content (desktop).
+ *   - `disclosure` — collapsed <details> above the content (mobile).
+ *
+ * They are separate renders rather than one component showing both, so the page
+ * never contains duplicate element ids.
+ */
+export interface Heading {
+  depth: number;
+  slug: string;
+  text: string;
+}
+
+interface Props {
+  headings: Heading[];
+  variant: 'rail' | 'disclosure';
+  /** Only h2/h3 are shown; deeper levels would make the rail noisy. */
+  maxDepth?: number;
+}
+
+const { headings, variant, maxDepth = 3 } = Astro.props;
+
+const items = headings.filter((h) => h.depth >= 2 && h.depth <= maxDepth);
+---
+
+{
+  items.length > 0 &&
+    (variant === 'disclosure' ? (
+      <details class="toc-disclosure">
+        <summary>On this page</summary>
+        <nav aria-label="On this page">
+          <ol class="toc-list">
+            {items.map((item) => (
+              <li class:list={['toc-item', `toc-depth-${item.depth}`]}>
+                <a href={`#${item.slug}`}>{item.text}</a>
+              </li>
+            ))}
+          </ol>
+        </nav>
+      </details>
+    ) : (
+      <nav class="toc-rail" aria-labelledby="toc-heading">
+        <h2 id="toc-heading" class="toc-heading">
+          On this page
+        </h2>
+        {/* The scroll-spy script below binds to this list only. */}
+        <ol class="toc-list" id="toc-rail-list">
+          {items.map((item) => (
+            <li class:list={['toc-item', `toc-depth-${item.depth}`]}>
+              <a href={`#${item.slug}`} data-toc-link={item.slug}>
+                {item.text}
+              </a>
+            </li>
+          ))}
+        </ol>
+      </nav>
+    ))
+}
+
+<style>
+  /* ── Shared list styling ────────────────────────────────────────────────── */
+  .toc-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+
+  .toc-item a {
+    display: block;
+    padding: 0.15rem var(--space-2xs);
+    border-left: 2px solid transparent;
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    line-height: var(--leading-snug);
+    text-decoration: none;
+    transition:
+      color var(--duration-fast) var(--ease-out),
+      border-color var(--duration-fast) var(--ease-out);
+  }
+
+  .toc-item a:hover {
+    color: var(--text);
+  }
+
+  /* Set by the scroll-spy script. */
+  .toc-item a[aria-current='true'] {
+    color: var(--accent);
+    border-left-color: var(--accent);
+    font-weight: var(--weight-medium);
+  }
+
+  .toc-depth-3 a {
+    padding-left: var(--space-md);
+    font-size: var(--text-xs);
+  }
+
+  /* ── Desktop rail ───────────────────────────────────────────────────────── */
+  .toc-rail {
+    display: none;
+  }
+
+  .toc-heading {
+    margin: 0 0 var(--space-2xs);
+    padding-left: var(--space-2xs);
+    font-size: var(--text-2xs);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  /* ── Mobile disclosure ──────────────────────────────────────────────────── */
+  .toc-disclosure {
+    margin-bottom: var(--space-lg);
+    padding: var(--space-2xs) var(--space-xs);
+    background-color: var(--bg-subtle);
+    border: var(--border-width) solid var(--border);
+    border-radius: var(--radius-md);
+  }
+
+  .toc-disclosure summary {
+    cursor: pointer;
+    font-size: var(--text-sm);
+    font-weight: var(--weight-medium);
+    color: var(--text-secondary);
+    list-style-position: outside;
+  }
+
+  .toc-disclosure[open] summary {
+    margin-bottom: var(--space-2xs);
+    padding-bottom: var(--space-2xs);
+    border-bottom: var(--border-width) solid var(--border);
+  }
+
+  @media (min-width: 64rem) {
+    .toc-disclosure {
+      display: none;
+    }
+
+    .toc-rail {
+      display: block;
+      position: sticky;
+      top: calc(var(--tabbar-height) + var(--space-lg));
+      z-index: var(--z-sticky);
+      max-height: calc(100vh - var(--tabbar-height) - var(--space-2xl));
+      overflow-y: auto;
+      overscroll-behavior: contain;
+    }
+  }
+</style>
+
+<script>
+  const links = Array.from(
+    document.querySelectorAll<HTMLAnchorElement>('#toc-rail-list a[data-toc-link]'),
+  );
+
+  if (links.length > 0) {
+    const bySlug = new Map(links.map((link) => [link.dataset.tocLink, link]));
+    const targets = links
+      .map((link) => document.getElementById(link.dataset.tocLink ?? ''))
+      .filter((el): el is HTMLElement => el !== null);
+
+    let activeSlug: string | null = null;
+
+    function setActive(slug: string | null) {
+      if (slug === activeSlug) return;
+      if (activeSlug) bySlug.get(activeSlug)?.removeAttribute('aria-current');
+      if (slug) bySlug.get(slug)?.setAttribute('aria-current', 'true');
+      activeSlug = slug;
+    }
+
+    // Track which headings are above the viewport's reading line; the last one
+    // still above it is the section currently in view.
+    const visible = new Set<string>();
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const id = entry.target.id;
+          if (entry.isIntersecting) visible.add(id);
+          else visible.delete(id);
+        }
+
+        if (visible.size > 0) {
+          // Pick the first visible heading in document order.
+          const first = targets.find((t) => visible.has(t.id));
+          setActive(first?.id ?? null);
+          return;
+        }
+
+        // Nothing intersecting: fall back to the last heading scrolled past.
+        const line = window.scrollY + window.innerHeight * 0.25;
+        let candidate: string | null = null;
+        for (const target of targets) {
+          if (target.getBoundingClientRect().top + window.scrollY <= line) candidate = target.id;
+          else break;
+        }
+        setActive(candidate);
+      },
+      {
+        // A band across the upper part of the viewport acts as the reading line.
+        rootMargin: '-15% 0px -70% 0px',
+        threshold: 0,
+      },
+    );
+
+    targets.forEach((target) => observer.observe(target));
+  }
+</script>

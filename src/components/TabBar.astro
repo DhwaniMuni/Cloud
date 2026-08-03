@@ -1,0 +1,161 @@
+---
+import { site } from '../data/site';
+import { path, weekPath } from '../lib/paths';
+import ThemeToggle from './ThemeToggle.astro';
+
+/**
+ * Persistent top navigation: Overview · 1 … 8 · Skills.
+ *
+ * A real <nav> wrapping a list. The active tab gets aria-current="page".
+ * Horizontally scrollable on narrow screens — never wraps.
+ */
+interface Props {
+  /** Which tab is active. A number means that week page. */
+  current: 'overview' | 'skills' | number;
+}
+
+const { current } = Astro.props;
+
+interface Tab {
+  href: string;
+  label: string;
+  /** Full label for screen readers, since "3" alone is meaningless. */
+  srLabel?: string;
+  active: boolean;
+}
+
+const weekTabs: Tab[] = Array.from({ length: site.totalWeeks }, (_, i) => {
+  const week = i + 1;
+  return {
+    href: weekPath(week),
+    label: String(week),
+    srLabel: `Week ${week}`,
+    active: current === week,
+  };
+});
+
+const tabs: Tab[] = [
+  { href: path('/'), label: 'Overview', active: current === 'overview' },
+  ...weekTabs,
+  { href: path('skills'), label: 'Skills', active: current === 'skills' },
+];
+---
+
+<header class="site-header">
+  <nav class="tabbar" aria-label="Program sections">
+    <ul class="tabbar-list">
+      {
+        tabs.map((tab) => (
+          <li class="tabbar-item">
+            <a
+              href={tab.href}
+              class:list={['tab', { 'tab-week': tab.srLabel !== undefined }]}
+              aria-current={tab.active ? 'page' : undefined}
+            >
+              {tab.srLabel ? (
+                <>
+                  <span aria-hidden="true">{tab.label}</span>
+                  <span class="visually-hidden">{tab.srLabel}</span>
+                </>
+              ) : (
+                tab.label
+              )}
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+  </nav>
+  <div class="header-actions">
+    <ThemeToggle />
+  </div>
+</header>
+
+<style>
+  .site-header {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-header);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2xs);
+    min-height: var(--tabbar-height);
+    padding-inline: var(--gutter);
+    background-color: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(8px);
+    border-bottom: var(--border-width) solid var(--border);
+  }
+
+  .tabbar {
+    flex: 1;
+    min-width: 0; /* lets the list scroll instead of pushing the toggle out */
+  }
+
+  .tabbar-list {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3xs);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .tabbar-list::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tabbar-item {
+    flex: 0 0 auto; /* no wrapping, ever */
+  }
+
+  .tab {
+    display: block;
+    padding: var(--space-3xs) var(--space-xs);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-medium);
+    text-decoration: none;
+    white-space: nowrap;
+    transition:
+      color var(--duration-fast) var(--ease-out),
+      background-color var(--duration-fast) var(--ease-out);
+  }
+
+  /* Week numbers are single characters — keep them square-ish and tappable. */
+  .tab-week {
+    min-width: 2rem;
+    text-align: center;
+  }
+
+  .tab:hover {
+    color: var(--text);
+    background-color: var(--bg-inset);
+  }
+
+  .tab[aria-current='page'] {
+    color: var(--accent);
+    background-color: var(--accent-subtle);
+  }
+
+  .header-actions {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+  }
+
+  @media (max-width: 26rem) {
+    .site-header {
+      padding-inline: var(--space-2xs);
+    }
+
+    /* Bigger touch targets on phones. */
+    .tab {
+      padding: var(--space-2xs) var(--space-2xs);
+    }
+  }
+</style>

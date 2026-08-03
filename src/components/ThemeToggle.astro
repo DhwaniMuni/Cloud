@@ -1,0 +1,119 @@
+---
+/**
+ * Manual light/dark toggle, persisted to localStorage.
+ *
+ * The no-flash guarantee comes from the blocking script in BaseLayout.astro,
+ * which sets `data-theme` before first paint. This component only handles the
+ * click and keeps the button's accessible state in sync.
+ */
+---
+
+<button
+  type="button"
+  id="theme-toggle"
+  class="theme-toggle"
+  aria-pressed="false"
+  title="Toggle dark mode"
+>
+  <span class="visually-hidden">Dark mode</span>
+  <svg class="icon icon-sun" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <circle cx="12" cy="12" r="4.2" fill="currentColor"></circle>
+    <g stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+      <path d="M12 2.4v2.4M12 19.2v2.4M2.4 12h2.4M19.2 12h2.4"></path>
+      <path d="M5.2 5.2l1.7 1.7M17.1 17.1l1.7 1.7M18.8 5.2l-1.7 1.7M6.9 17.1l-1.7 1.7"></path>
+    </g>
+  </svg>
+  <svg class="icon icon-moon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <path
+      d="M20.1 14.6A8.6 8.6 0 0 1 9.4 3.9a8.6 8.6 0 1 0 10.7 10.7Z"
+      fill="currentColor"
+      stroke="none"></path>
+  </svg>
+</button>
+
+<style>
+  .theme-toggle {
+    display: inline-grid;
+    place-items: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    padding: 0;
+    background-color: transparent;
+    color: var(--text-secondary);
+    border: var(--border-width) solid transparent;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition:
+      color var(--duration-fast) var(--ease-out),
+      background-color var(--duration-fast) var(--ease-out),
+      border-color var(--duration-fast) var(--ease-out);
+  }
+
+  .theme-toggle:hover {
+    color: var(--text);
+    background-color: var(--bg-inset);
+    border-color: var(--border);
+  }
+
+  .icon {
+    width: 1.125rem;
+    height: 1.125rem;
+    grid-area: 1 / 1;
+  }
+
+  /* Show the icon for the theme you'd switch TO. */
+  .icon-moon {
+    display: block;
+  }
+  .icon-sun {
+    display: none;
+  }
+
+  :global(:root[data-theme='dark']) .icon-moon {
+    display: none;
+  }
+  :global(:root[data-theme='dark']) .icon-sun {
+    display: block;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :global(:root:not([data-theme])) .icon-moon {
+      display: none;
+    }
+    :global(:root:not([data-theme])) .icon-sun {
+      display: block;
+    }
+  }
+</style>
+
+<script>
+  const STORAGE_KEY = 'theme';
+
+  function currentTheme(): 'light' | 'dark' {
+    const attr = document.documentElement.dataset.theme;
+    if (attr === 'light' || attr === 'dark') return attr;
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+
+  function apply(theme: 'light' | 'dark') {
+    document.documentElement.dataset.theme = theme;
+    button?.setAttribute('aria-pressed', String(theme === 'dark'));
+  }
+
+  const button = document.getElementById('theme-toggle');
+
+  // Sync the button's state with whatever the blocking script resolved.
+  apply(currentTheme());
+
+  button?.addEventListener('click', () => {
+    const next = currentTheme() === 'dark' ? 'light' : 'dark';
+    localStorage.setItem(STORAGE_KEY, next);
+    apply(next);
+  });
+
+  // Follow the OS while the user has no explicit preference stored.
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (event) => {
+    if (localStorage.getItem(STORAGE_KEY)) return;
+    apply(event.matches ? 'dark' : 'light');
+  });
+</script>
