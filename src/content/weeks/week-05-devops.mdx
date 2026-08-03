@@ -18,7 +18,7 @@ tools:
 challenges:
   - title: 'ECS tasks cycled without ever passing health checks'
     problem: 'New task revisions started, failed the target group health check, and were killed — over and over. The service events only said "task failed ELB health checks", and the container logs looked clean because the process was starting fine.'
-    solution: 'The health check hit `/` but the app served its readiness probe at `/actuator/health`, and the grace period was shorter than Spring Boot''s startup time. I pointed the target group at the real health path and raised the health check grace period to 90s, which let the first revision stabilise.'
+    solution: "The health check hit `/` but the app served its readiness probe at `/actuator/health`, and the grace period was shorter than Spring Boot's startup time. I pointed the target group at the real health path and raised the health check grace period to 90s, which let the first revision stabilise."
   - title: 'CodeBuild could not push to ECR'
     problem: 'The build ran to completion, then failed on `docker push` with "no basic auth credentials". Re-running did not help — the failure was deterministic.'
     solution: 'Two separate problems wearing one error message. The CodeBuild service role was missing `ecr:GetAuthorizationToken` (an account-level action, so it needs `Resource: "*"`), and my buildspec ran `docker login` in a different shell invocation than the push, so the credential was gone. Moved the login into the same `pre_build` block and scoped the remaining ECR actions to the repository ARN.'
@@ -60,9 +60,21 @@ Four stages, each one an artifact handoff rather than a shared filesystem:
   caption="Commit to production: every stage hands the next one an immutable artifact."
   stages={[
     { label: 'Source', detail: 'Push to main; CodePipeline picks up the commit', icon: '◇' },
-    { label: 'Build', detail: 'CodeBuild runs tests, builds the image, tags it with the commit SHA', icon: '▢' },
-    { label: 'Push', detail: 'Image goes to ECR; the SHA tag is the only identifier downstream', icon: '△' },
-    { label: 'Deploy', detail: 'New ECS task definition revision, rolling update behind the ALB', icon: '○' },
+    {
+      label: 'Build',
+      detail: 'CodeBuild runs tests, builds the image, tags it with the commit SHA',
+      icon: '▢',
+    },
+    {
+      label: 'Push',
+      detail: 'Image goes to ECR; the SHA tag is the only identifier downstream',
+      icon: '△',
+    },
+    {
+      label: 'Deploy',
+      detail: 'New ECS task definition revision, rolling update behind the ALB',
+      icon: '○',
+    },
   ]}
 />
 
@@ -72,10 +84,9 @@ that digest. That is what makes a rollback trivial — you re-deploy an older
 digest rather than rebuilding an older commit.
 
 <Callout variant="insight" title="Tag with the commit SHA, not `latest`">
-  `latest` is a mutable pointer, which means two deploys of "the same" tag can ship
-  different code. Tagging with the immutable commit SHA made every deploy traceable
-  back to one line of `git log`, and made "which version is actually running?" a
-  question with an answer.
+  `latest` is a mutable pointer, which means two deploys of "the same" tag can ship different code.
+  Tagging with the immutable commit SHA made every deploy traceable back to one line of `git log`,
+  and made "which version is actually running?" a question with an answer.
 </Callout>
 
 ## Architecture
@@ -97,12 +108,24 @@ digest rather than rebuilding an older commit.
       <path d="M296 40h72M296 160h72M488 160h72" />
     </g>
     <g fill="currentColor" font-size="12" font-family="system-ui, sans-serif" text-anchor="middle">
-      <text x="60" y="105">Browser</text>
-      <text x="236" y="45">CloudFront</text>
-      <text x="236" y="165">ALB</text>
-      <text x="428" y="45">S3 (private)</text>
-      <text x="428" y="165">ECS Fargate</text>
-      <text x="620" y="165">ECR</text>
+      <text x="60" y="105">
+        Browser
+      </text>
+      <text x="236" y="45">
+        CloudFront
+      </text>
+      <text x="236" y="165">
+        ALB
+      </text>
+      <text x="428" y="45">
+        S3 (private)
+      </text>
+      <text x="428" y="165">
+        ECS Fargate
+      </text>
+      <text x="620" y="165">
+        ECR
+      </text>
     </g>
   </svg>
 </ArchitectureDiagram>
@@ -178,7 +201,10 @@ had CI substitute the real digest:
         }
       ],
       "healthCheck": {
-        "command": ["CMD-SHELL", "wget -q --spider http://localhost:8080/actuator/health || exit 1"],
+        "command": [
+          "CMD-SHELL",
+          "wget -q --spider http://localhost:8080/actuator/health || exit 1"
+        ],
         "interval": 30,
         "timeout": 5,
         "retries": 3,
@@ -198,10 +224,9 @@ had CI substitute the real digest:
 ```
 
 <Callout variant="warning" title="Two roles, two jobs">
-  `executionRoleArn` is what the ECS agent uses to pull the image and write logs.
-  `taskRoleArn` is what *your application code* uses to call AWS. Conflating them
-  is how a web service ends up with permission to pull images — and how a
-  "permission denied" ends up in the wrong place entirely.
+  `executionRoleArn` is what the ECS agent uses to pull the image and write logs. `taskRoleArn` is
+  what *your application code* uses to call AWS. Conflating them is how a web service ends up with
+  permission to pull images — and how a "permission denied" ends up in the wrong place entirely.
 </Callout>
 
 ## Fronting S3 with CloudFront

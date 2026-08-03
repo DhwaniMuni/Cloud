@@ -53,7 +53,7 @@ import Callout from '../../components/Callout.astro';
 
 The capstone began as ordinary RAG: embed the docs, retrieve the top _k_ chunks,
 stuff them into a prompt, return the answer. It worked, and it was also a
-dead end — it could answer questions but could not *do* anything, and the
+dead end — it could answer questions but could not _do_ anything, and the
 orchestration logic lived in my application where every new capability meant
 another branch.
 
@@ -95,7 +95,11 @@ path from the model to an API call.
   stages={[
     { label: 'Question', detail: 'React client posts to the Spring Boot API', icon: '◇' },
     { label: 'InvokeAgent', detail: 'One call; the agent plans its own steps', icon: '◆' },
-    { label: 'Retrieve or act', detail: 'Knowledge Base search, Lambda action group, or both', icon: '△' },
+    {
+      label: 'Retrieve or act',
+      detail: 'Knowledge Base search, Lambda action group, or both',
+      icon: '△',
+    },
     { label: 'Grounded answer', detail: 'Streamed back with document-level citations', icon: '○' },
   ]}
 />
@@ -122,9 +126,9 @@ bedrockAgentRuntime.invokeAgent(request, InvokeAgentResponseHandler.builder()
 ```
 
 <Callout variant="insight" title="What actually changed">
-  The line count barely moved — but the *decisions* moved. Whether to retrieve, how
-  many times, whether to call a tool first: those were `if` statements in my service
-  and are now the agent's job. My service is a transport layer again.
+  The line count barely moved — but the *decisions* moved. Whether to retrieve, how many times,
+  whether to call a tool first: those were `if` statements in my service and are now the agent's
+  job. My service is a transport layer again.
 </Callout>
 
 ### Reading traces instead of reading logs
@@ -154,12 +158,24 @@ it chose. Most of my debugging this week was reading traces, not stack traces.
       <path d="M592 48h32" />
     </g>
     <g fill="currentColor" font-size="12" font-family="system-ui, sans-serif" text-anchor="middle">
-      <text x="56" y="125">React</text>
-      <text x="208" y="125">Spring Boot</text>
-      <text x="364" y="125">Agent</text>
-      <text x="528" y="53">Knowledge Base</text>
-      <text x="528" y="197">Lambda</text>
-      <text x="664" y="53">OpenSearch</text>
+      <text x="56" y="125">
+        React
+      </text>
+      <text x="208" y="125">
+        Spring Boot
+      </text>
+      <text x="364" y="125">
+        Agent
+      </text>
+      <text x="528" y="53">
+        Knowledge Base
+      </text>
+      <text x="528" y="197">
+        Lambda
+      </text>
+      <text x="664" y="53">
+        OpenSearch
+      </text>
     </g>
   </svg>
 </ArchitectureDiagram>
@@ -167,7 +183,7 @@ it chose. Most of my debugging this week was reading traces, not stack traces.
 ## The Lambda-backed action group
 
 An action group is how the agent reaches outside its own knowledge. The contract
-is an OpenAPI schema the agent reads to decide *whether* and *how* to call you:
+is an OpenAPI schema the agent reads to decide _whether_ and _how_ to call you:
 
 ```json
 {
@@ -193,13 +209,12 @@ is an OpenAPI schema the agent reads to decide *whether* and *how* to call you:
 
 The `description` is not documentation — it is the prompt the agent uses to route.
 Vague descriptions produced an agent that called the tool for everything or never
-called it at all; being explicit about *when* to use it fixed the routing.
+called it at all; being explicit about _when_ to use it fixed the routing.
 
 <Callout variant="warning" title="The model supplies the arguments">
-  An action group is a public endpoint whose caller is a language model. Validate
-  everything: I match `ticketId` against the pattern above inside the Lambda too,
-  because a schema in the OpenAPI document is a hint to the model, not a guarantee
-  at the boundary.
+  An action group is a public endpoint whose caller is a language model. Validate everything: I
+  match `ticketId` against the pattern above inside the Lambda too, because a schema in the OpenAPI
+  document is a hint to the model, not a guarantee at the boundary.
 </Callout>
 
 ## Citations that a human can follow

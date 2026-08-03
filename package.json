@@ -8,21 +8,22 @@
     "build": "astro build",
     "preview": "astro preview",
     "check": "astro check",
+    "check:links": "node scripts/check-links.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
   "dependencies": {
-    "@astrojs/check": "^0.9.10",
     "@astrojs/mdx": "^7.0.5",
     "astro": "^7.1.6",
-    "typescript": "^6.0.3",
     "zod": "^4.4.3"
   },
   "allowScripts": {
     "esbuild@0.28.1": true
   },
   "devDependencies": {
+    "@astrojs/check": "^0.9.10",
     "prettier": "^3.9.6",
-    "prettier-plugin-astro": "^0.14.1"
+    "prettier-plugin-astro": "^0.14.1",
+    "typescript": "^6.0.3"
   }
 }
