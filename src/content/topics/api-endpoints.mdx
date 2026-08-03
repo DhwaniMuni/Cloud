@@ -1,0 +1,654 @@
+---
+order: 1
+title: 'API endpoints: how a URL becomes running code'
+tab: 'API endpoints'
+hook: 'Building GET, POST and DELETE endpoints on a Spring Boot backend, wiring them to DynamoDB, displaying the data in a React frontend, and proving each one works in Postman.'
+goal: 'Start from nothing and end up able to explain — and build — an HTTP endpoint. Get the frontend and backend of the resourcehub project running together on my own machine, add endpoints that read, create and delete a resource, back the reads with real data from DynamoDB, and verify every one of them in Postman before trusting the UI.'
+tools:
+  - REST APIs
+  - Spring Boot
+  - Java
+  - Maven
+  - Amazon DynamoDB
+  - Postman
+  - React
+  - TypeScript
+keyTerms:
+  - term: API
+    definition: 'Application Programming Interface — an agreed set of requests one program can make to another. A web API is that agreement expressed as URLs over HTTP.'
+  - term: Endpoint
+    definition: 'One specific address the backend agrees to answer, identified by a method and a path together — `GET /api/resources` and `POST /api/resources` are two different endpoints at the same path.'
+  - term: 'HTTP method (verb)'
+    definition: 'The kind of action being asked for. GET reads, POST creates, PUT/PATCH update, DELETE removes. The method is a promise about intent, not a technical restriction.'
+  - term: Path variable
+    definition: 'A slot in the URL that holds a value instead of a fixed word. In `/api/resources/{resourceId}` the last segment is a variable, so `/api/resources/42` addresses resource 42.'
+  - term: Query parameter
+    definition: 'Extra key/value options after a `?` in the URL, used to filter or page a read — `/api/resources?category=cloud`. Unlike a path variable, it narrows a collection rather than identifying one thing.'
+  - term: Payload
+    definition: 'The body of the message — the actual data being carried, separate from the address and the headers. A POST sends a request payload describing what to create; a GET usually sends none but gets a response payload back.'
+  - term: JSON
+    definition: 'JavaScript Object Notation — the text format both sides use for payloads. Objects in braces, keys in quotes. It is just text, which is why a browser and a Java process can agree on it.'
+  - term: Header
+    definition: 'Metadata about the request or response, not the data itself. `Content-Type: application/json` tells the receiver how to read the payload; `Authorization` carries credentials.'
+  - term: Status code
+    definition: 'A three-digit summary of what happened. 2xx worked, 4xx means the caller got it wrong (404 not found, 400 malformed), 5xx means the server broke. Clients branch on this before reading the body.'
+  - term: Controller
+    definition: 'The backend class that maps incoming URLs to methods. In Spring Boot a `@RestController` is the layer that knows about HTTP — and ideally the only layer that does.'
+  - term: 'Service layer'
+    definition: 'The class holding the actual business rules, called by the controller. It knows nothing about HTTP, which is what lets the same logic serve a web request, a scheduled job, or a test.'
+  - term: 'Repository (DAO)'
+    definition: 'The class that talks to storage. Everything above it asks for "the resource with this id" without knowing whether that means DynamoDB, Postgres, or an in-memory map.'
+  - term: DynamoDB
+    definition: "AWS's managed NoSQL key-value store. You look items up by a partition key rather than querying with SQL, which makes single-item reads very fast and ad-hoc queries awkward by design."
+  - term: CORS
+    definition: 'Cross-Origin Resource Sharing — the browser rule that stops a page served from one origin calling a different origin unless that server opts in. It is enforced by the browser only, which is why Postman never sees it.'
+  - term: Postman
+    definition: 'A desktop client for firing HTTP requests by hand. It lets you exercise an endpoint with no frontend at all, so when something breaks you know which half of the system to blame.'
+challenges:
+  - title: 'The frontend could not reach the backend at all'
+    problem: 'Both processes were running — the backend answered on `http://localhost:8080` and the React app loaded on a different port — but every request from the browser failed. The network tab showed the request, the browser console showed "blocked by CORS policy", and the backend logs showed nothing at all.'
+    solution: "Two different ports are two different origins, so the browser refused the response before my code ever saw it. The backend logs were empty because the browser blocked the *response*, not the request. I pointed the frontend at a relative `/api` path and let the dev server proxy it through to port 8080, so from the browser's point of view everything comes from one origin. The alternative — annotating the controller with `@CrossOrigin` — works too, but it bakes a local-development concern into production code."
+  - title: 'A missing resource crashed the endpoint instead of returning 404'
+    problem: 'Requesting an id that did not exist returned a 500 with a stack trace instead of a clean "not found". The service was returning `null`, and the first thing that touched the result threw a `NullPointerException`.'
+    solution: 'A missing row is a normal outcome, not a failure. I made the controller check for `null` before building the response and return `ResponseEntity.notFound().build()` — no body, just the status. That is the whole difference between "the server broke" and "you asked for something that is not here", and the frontend needs to be able to tell them apart.'
+  - title: 'DELETE reported success but the item was still there'
+    problem: 'Deleting a resource in Postman returned 204 every single time, including for ids I had invented on the spot. The item I actually wanted gone was still coming back from the GET endpoint.'
+    solution: 'DynamoDB''s `DeleteItem` is idempotent — deleting a key that does not exist is a success, not an error. My key was being built from the wrong field, so every delete was silently removing nothing. Once I fixed the partition key I also made the endpoint read the item first and return 404 when it is absent, so a 204 now genuinely means "it was there and now it is not".'
+  - title: 'POST returned 400 before it reached my code'
+    problem: 'The same JSON that worked from the frontend came back as 400 Bad Request from Postman, with a breakpoint in the controller that never hit.'
+    solution: 'I had pasted the body into Postman as raw text without setting the type, so it arrived without a `Content-Type: application/json` header and Spring had no idea how to turn it into an object. Selecting **Body → raw → JSON** fixed it. A good reminder that the headers are part of the request, not decoration.'
+learned:
+  - 'An endpoint is a method and a path together, not just a URL. `GET /api/resources` and `DELETE /api/resources` are two unrelated pieces of code that happen to share an address.'
+  - 'The status code is the part of the response the caller reads first. Getting 404 versus 500 versus 204 right is what makes a frontend able to show "no results" instead of "something went wrong".'
+  - 'Keeping HTTP concerns in the controller and storage concerns in the repository meant swapping the data source was a one-file change. The service layer never learned that DynamoDB existed.'
+  - 'DynamoDB is not a relational database with different syntax. Designing around the partition key up front is the work; everything else follows from it.'
+  - 'Testing an endpoint in Postman before touching the UI cut my debugging time in half, because a failure there rules out the entire frontend in one step.'
+  - 'CORS is a browser rule, not a server error. Understanding *who* is enforcing a failure is usually faster than reading the error message again.'
+artifacts:
+  - label: 'resourcehub — backend and frontend'
+    url: 'https://github.com/USERNAME/resourcehub'
+    kind: repo
+  - label: 'PR: add resource CRUD endpoints'
+    url: 'https://github.com/USERNAME/resourcehub/pull/1'
+    kind: pr
+featured: true
+draft: false
+---
+
+import PipelineDiagram from '../../components/PipelineDiagram.astro';
+import ArchitectureDiagram from '../../components/ArchitectureDiagram.astro';
+import Callout from '../../components/Callout.astro';
+
+This was the first thing I learned in the programme, and it turned out to be the
+thing everything else sits on. If you have never built one, this section is
+written for you: no prior knowledge assumed, and every piece of jargon defined
+above before it is used.
+
+## What an endpoint actually is
+
+Two programs need to talk. One is a web page running in someone's browser; the
+other is a Java process running on a server. They do not share memory, they are
+not in the same language, and they may not even be on the same continent. So they
+agree on a set of **addresses** that one can ask about and the other will answer.
+
+Each of those addresses is an **endpoint**.
+
+An endpoint is made of two things, and it needs both:
+
+| Part       | Example             | What it says             |
+| ---------- | ------------------- | ------------------------ |
+| **Method** | `GET`               | what kind of action      |
+| **Path**   | `/api/resources/42` | what you want it done to |
+
+That pairing matters more than it looks. `GET /api/resources/42` and
+`DELETE /api/resources/42` point at the same resource but are two completely
+separate pieces of code with opposite consequences. The path says _what_, the
+method says _what to do with it_.
+
+Here is the whole system for the read case — the browser, the backend, and the
+database it pulls from:
+
+<ArchitectureDiagram
+  caption="One GET request, all the way down and back. The frontend never talks to DynamoDB; only the backend does."
+  alt="A React frontend in the browser sends an HTTP GET request for /api/resources/1 to a Spring Boot backend, which returns 200 OK with a JSON body. The backend in turn calls DynamoDB with a GetItem request for that partition key and receives the item's attributes back."
+>
+  <svg viewBox="0 0 900 300" role="presentation">
+    <g fill="none" stroke="currentColor" stroke-width="1.5">
+      <rect x="8" y="110" width="170" height="80" rx="8" />
+      <rect x="330" y="110" width="200" height="80" rx="8" />
+      <rect x="700" y="110" width="192" height="80" rx="8" />
+      <path d="M186 140h136m0 0-7-4.5m7 4.5-7 4.5" />
+      <path d="M322 170H186m0 0 7-4.5m-7 4.5 7 4.5" />
+      <path d="M538 140h154m0 0-7-4.5m7 4.5-7 4.5" />
+      <path d="M692 170H538m0 0 7-4.5m-7 4.5 7 4.5" />
+    </g>
+    <g fill="currentColor" font-family="system-ui, sans-serif" text-anchor="middle">
+      <text x="93" y="142" font-size="14">
+        Browser
+      </text>
+      <text x="93" y="163" font-size="11" opacity="0.75">
+        React frontend
+      </text>
+      <text x="430" y="136" font-size="14">
+        Spring Boot backend
+      </text>
+      <text x="430" y="157" font-size="11" opacity="0.75">
+        Controller
+      </text>
+      <text x="430" y="175" font-size="11" opacity="0.75">
+        Service → Repository
+      </text>
+      <text x="796" y="142" font-size="14">
+        DynamoDB
+      </text>
+      <text x="796" y="163" font-size="11" opacity="0.75">
+        Resources table
+      </text>
+      <text x="254" y="128" font-size="11">
+        GET /api/resources/1
+      </text>
+      <text x="254" y="190" font-size="11">
+        200 OK + JSON
+      </text>
+      <text x="615" y="128" font-size="11">
+        GetItem(resourceId)
+      </text>
+      <text x="615" y="190" font-size="11">
+        item attributes
+      </text>
+      <text x="450" y="240" font-size="11" opacity="0.75">
+        HTTP over the network · JSON text
+      </text>
+      <text x="796" y="240" font-size="11" opacity="0.75">
+        AWS SDK · private
+      </text>
+    </g>
+  </svg>
+</ArchitectureDiagram>
+
+The frontend has no idea DynamoDB exists. All it knows is that if it asks a
+certain URL nicely, JSON comes back. That ignorance is the point — the storage
+could be swapped tomorrow and the browser code would not change a line.
+
+## Anatomy of a request
+
+Underneath `fetch()` and Postman and every HTTP library, a request is just text
+sent over a socket. Seeing it written out demystifies most of the vocabulary:
+
+```text
+POST /api/resources HTTP/1.1          ← method, path, protocol version
+Host: localhost:8080                  ← which server
+Content-Type: application/json        ← how to read the body below
+Accept: application/json              ← what I would like back
+                                      ← one blank line: headers end here
+{                                     ← everything from here is the PAYLOAD
+  "title": "AWS Well-Architected Framework",
+  "url": "https://aws.amazon.com/architecture/well-architected/",
+  "category": "cloud"
+}
+```
+
+And the response has exactly the same shape — a status line, headers, a blank
+line, then its own payload:
+
+```text
+HTTP/1.1 201 Created
+Content-Type: application/json
+
+{
+  "resourceId": "7f3c9a12-8b4e-4c21-9d55-1a6f0e2b7c88",
+  "title": "AWS Well-Architected Framework",
+  "url": "https://aws.amazon.com/architecture/well-architected/",
+  "category": "cloud"
+}
+```
+
+### So what is a payload?
+
+The **payload** is the body — the data itself, after the blank line. Everything
+above the blank line is addressing and metadata; the payload is the cargo.
+
+- A **`POST`** sends a payload: "here is the resource I want you to create."
+- A **`GET`** normally sends no payload. Everything it needs fits in the URL,
+  which is what makes a GET link-shareable and cacheable.
+- A **`DELETE`** usually sends no payload either — the id in the path is enough.
+- Almost every response carries a payload, except deliberately empty ones like
+  `204 No Content`.
+
+<Callout variant="note" title="Payload, body, JSON — the same thing, loosely">
+  People use "payload", "request body" and "the JSON" interchangeably. Strictly, the body is the
+  slot and JSON is one possible format for what goes in it — a file upload has a body too and it is
+  not JSON. In practice, if someone says "check the payload", they mean look at the JSON.
+</Callout>
+
+## Getting the two halves talking locally
+
+Before any of this can be built, both halves have to be running on the same
+machine at the same time. For resourcehub that is four commands in two terminals —
+backend first, because the frontend is useless without something to call:
+
+<PipelineDiagram
+  caption="The local development loop. Backend in one terminal, frontend in another, both left running."
+  stages={[
+    {
+      label: 'mvn clean install',
+      detail: 'Wipes previous output, resolves dependencies, compiles and packages the backend',
+      icon: '◇',
+    },
+    {
+      label: 'mvn spring-boot:run',
+      detail: 'Starts the backend on localhost:8080 and leaves it running',
+      icon: '▢',
+    },
+    {
+      label: 'npm install',
+      detail: 'Pulls the frontend dependencies into node_modules',
+      icon: '△',
+    },
+    {
+      label: 'npm run dev',
+      detail: 'Starts the dev server, which proxies /api through to port 8080',
+      icon: '○',
+    },
+  ]}
+/>
+
+```bash
+# ── Terminal 1: the backend ───────────────────────────────────────────────
+cd backend
+
+# `clean` deletes target/ first, so you are never running yesterday's classes.
+# `install` compiles, runs the tests, and packages the jar.
+mvn clean install
+
+# Boots the app and blocks — leave this terminal open. Ctrl-C stops the server.
+mvn spring-boot:run
+```
+
+```bash
+# ── Terminal 2: the frontend ──────────────────────────────────────────────
+cd frontend
+
+# Only needed the first time, and whenever package.json changes.
+npm install
+
+# Dev server with hot reload. Also blocks; leave it open too.
+npm run dev
+```
+
+Two things about this that were not obvious to me at the start:
+
+- **Both commands block on purpose.** They are not scripts that finish — they are
+  long-running servers. Two terminals is the normal state of things, not a
+  workaround.
+- **The two processes are strangers.** They only meet over HTTP. If the backend
+  is not up, the frontend still loads perfectly and then fails on every request,
+  which is a genuinely confusing first experience.
+
+<Callout variant="warning" title="`mvn clean install` is not a one-time setup step">
+  Any time the backend behaves like it is running code you already deleted, the answer is `mvn clean
+  install`. Stale classes in `target/` produce errors that make no sense against the source in front
+  of you.
+</Callout>
+
+## The request path through the backend
+
+Once a request arrives, it moves through three layers on its way to the data and
+back. Each layer knows about exactly one thing:
+
+<PipelineDiagram
+  caption="Each layer knows one thing: HTTP, rules, or storage."
+  stages={[
+    { label: 'fetch()', detail: 'Frontend asks for a URL' },
+    { label: '@RestController', detail: 'Maps the URL to a method; owns status codes' },
+    { label: 'Service', detail: 'Business rules; no HTTP, no SDK' },
+    { label: 'Repository', detail: 'Talks to DynamoDB; returns plain objects' },
+    { label: 'JSON response', detail: 'Serialised on the way out and rendered' },
+  ]}
+/>
+
+The discipline that made everything easier later: **only the controller is
+allowed to know about HTTP, and only the repository is allowed to know about
+DynamoDB.** When something broke, that told me which file to open.
+
+## GET: reading one resource
+
+This is the endpoint I wrote first, and it is worth going through line by line:
+
+```java
+@GetMapping("/{resourceId}")
+public ResponseEntity<Resource> getResource(@PathVariable String resourceId) {
+    Resource resource = resourceService.getResource(resourceId);
+    if (resource == null) {
+        return ResponseEntity.notFound().build();
+    }
+    return ResponseEntity.ok(resource);
+}
+```
+
+Reading it in order:
+
+- **`@GetMapping("/{resourceId}")`** registers this method to answer `GET`
+  requests. The path is relative to the controller's own `@RequestMapping`, so
+  with `/api/resources` on the class, the full address is
+  `/api/resources/{resourceId}`.
+- **`{resourceId}`** in braces is a path variable — a slot, not a literal. A
+  request to `/api/resources/42` matches, with `resourceId` bound to `"42"`.
+- **`@PathVariable String resourceId`** is what pulls that slot out of the URL
+  and hands it to your code as an ordinary Java string. The name has to match the
+  name in the braces.
+- **`ResponseEntity<Resource>`** is the return type because we want to control
+  the status code _and_ the body. Returning plain `Resource` would always mean
+  200, which is exactly the flexibility we need here.
+- **`ResponseEntity.notFound().build()`** is a 404 with no body. `build()` is
+  there because there is nothing to attach.
+- **`ResponseEntity.ok(resource)`** is 200 plus the object, which Spring
+  serialises to JSON automatically.
+
+That `null` check is the entire lesson of the method. Without it a missing id
+becomes a 500 and a stack trace; with it, "that does not exist" is a normal,
+readable answer.
+
+### The controller it lives in
+
+```java
+@RestController
+@RequestMapping("/api/resources")
+public class ResourceController {
+
+    private final ResourceService resourceService;
+
+    // Constructor injection: Spring supplies the service at startup, and the
+    // field can be final. No @Autowired annotation needed.
+    public ResourceController(ResourceService resourceService) {
+        this.resourceService = resourceService;
+    }
+
+    @GetMapping
+    public List<Resource> listResources() {
+        // Returning a plain list is fine here — a collection read is always 200,
+        // and an empty list is a valid answer, not a 404.
+        return resourceService.listResources();
+    }
+
+    @GetMapping("/{resourceId}")
+    public ResponseEntity<Resource> getResource(@PathVariable String resourceId) {
+        Resource resource = resourceService.getResource(resourceId);
+        if (resource == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(resource);
+    }
+}
+```
+
+`@RestController` is the piece doing the invisible work: it tells Spring that
+whatever these methods return is the response body, and to convert it to JSON
+rather than look for an HTML template.
+
+## Where the data actually comes from
+
+The service and repository are what turn an id into a row. The repository is the
+only class that imports anything AWS-shaped:
+
+```java
+@Repository
+public class ResourceRepository {
+
+    private final DynamoDbTable<Resource> table;
+
+    public ResourceRepository(DynamoDbEnhancedClient enhancedClient) {
+        this.table = enhancedClient.table("Resources", TableSchema.fromBean(Resource.class));
+    }
+
+    public Resource findById(String resourceId) {
+        // DynamoDB looks items up by partition key. There is no "WHERE" here —
+        // this is a direct key lookup, which is why it is fast and why the key
+        // design matters so much.
+        return table.getItem(Key.builder().partitionValue(resourceId).build());
+    }
+
+    public List<Resource> findAll() {
+        // A scan reads the whole table. Fine for a small catalogue, and the
+        // first thing to replace with a query or index once it grows.
+        return table.scan().items().stream().toList();
+    }
+
+    public void save(Resource resource) {
+        table.putItem(resource);
+    }
+
+    public void deleteById(String resourceId) {
+        table.deleteItem(Key.builder().partitionValue(resourceId).build());
+    }
+}
+```
+
+The model class carries the mapping between Java fields and DynamoDB attributes:
+
+```java
+@DynamoDbBean
+public class Resource {
+
+    private String resourceId;
+    private String title;
+    private String url;
+    private String category;
+
+    // The partition key: the single attribute DynamoDB uses to find this item.
+    @DynamoDbPartitionKey
+    public String getResourceId() {
+        return resourceId;
+    }
+
+    public void setResourceId(String resourceId) {
+        this.resourceId = resourceId;
+    }
+
+    public String getTitle() {
+        return title;
+    }
+
+    public void setTitle(String title) {
+        this.title = title;
+    }
+
+    // ... remaining getters and setters
+}
+```
+
+<Callout variant="insight" title="The partition key is a design decision, not a detail">
+  In DynamoDB you fetch by key. There is no ad-hoc `WHERE category = 'cloud'` that stays fast — you
+  either scan the table or add an index you planned for. Choosing `resourceId` as the partition key
+  decided, up front, which questions this table can answer cheaply.
+</Callout>
+
+## Displaying it in the frontend
+
+With the endpoint returning JSON, the frontend's job is small: call it, handle
+the three states it can be in, and render.
+
+```tsx
+import { useEffect, useState } from 'react';
+
+interface Resource {
+  resourceId: string;
+  title: string;
+  url: string;
+  category: string;
+}
+
+export function ResourceList() {
+  const [resources, setResources] = useState<Resource[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // A relative path, so the dev server proxies it to localhost:8080 and the
+    // browser sees a same-origin request. No CORS involved.
+    fetch('/api/resources')
+      .then((response) => {
+        // fetch() only rejects on network failure — a 404 or 500 still resolves,
+        // so the status has to be checked by hand.
+        if (!response.ok) {
+          throw new Error(`Request failed with status ${response.status}`);
+        }
+        return response.json() as Promise<Resource[]>;
+      })
+      .then(setResources)
+      .catch((cause) => setError(cause.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <p>Loading resources…</p>;
+  if (error) return <p role="alert">Could not load resources: {error}</p>;
+  if (resources.length === 0) return <p>No resources yet.</p>;
+
+  return (
+    <ul>
+      {resources.map((resource) => (
+        <li key={resource.resourceId}>
+          <a href={resource.url}>{resource.title}</a> <span>{resource.category}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+```
+
+The `response.ok` check is the part that catches people out. `fetch()` treats a
+404 as a request that _succeeded_ in reaching the server — the promise resolves
+happily and you end up calling `.json()` on an error page. Checking the status is
+not defensive programming; it is the required step.
+
+An empty list and a failed request also have to render differently. "No resources
+yet" and "the backend is down" look identical if you only track one state.
+
+## POST: creating a resource
+
+A POST is the first endpoint with a request payload, which means the first use of
+`@RequestBody`:
+
+```java
+@PostMapping
+public ResponseEntity<Resource> createResource(@Valid @RequestBody ResourceRequest request) {
+    Resource created = resourceService.createResource(request);
+
+    // 201 Created, with a Location header pointing at the new resource — so the
+    // caller learns the generated id without having to guess the URL.
+    URI location = URI.create("/api/resources/" + created.getResourceId());
+    return ResponseEntity.created(location).body(created);
+}
+```
+
+- **`@RequestBody`** is the mirror image of `@PathVariable`: it takes the JSON
+  payload and deserialises it into a Java object. `@PathVariable` reads the
+  address, `@RequestBody` reads the cargo.
+- **`ResourceRequest`** is deliberately not `Resource`. The client should not get
+  to set the id, so the incoming shape only contains the fields it is allowed to
+  supply.
+- **`@Valid`** makes Spring check the annotations on that class before your
+  method runs, so a missing `title` is a 400 you never wrote code for.
+- **`ResponseEntity.created(...)`** returns 201 rather than 200. 200 means "here
+  is your answer"; 201 means "I made something new, and here is where it lives".
+
+```java
+public class ResourceRequest {
+
+    @NotBlank(message = "title is required")
+    private String title;
+
+    @NotBlank(message = "url is required")
+    private String url;
+
+    private String category;
+
+    // getters and setters
+}
+```
+
+## DELETE: removing a resource
+
+```java
+@DeleteMapping("/{resourceId}")
+public ResponseEntity<Void> deleteResource(@PathVariable String resourceId) {
+    // DynamoDB's delete is idempotent: deleting a key that was never there is a
+    // success. Reading first is what lets us honestly answer 404.
+    if (resourceService.getResource(resourceId) == null) {
+        return ResponseEntity.notFound().build();
+    }
+
+    resourceService.deleteResource(resourceId);
+
+    // 204 No Content: it worked, and there is deliberately nothing to send back.
+    return ResponseEntity.noContent().build();
+}
+```
+
+`ResponseEntity<Void>` is the type for "a status code and no body". The read
+before the delete is not paranoia — without it every DELETE returns success,
+including for ids that never existed, and you lose the only signal that would
+have told you the key was wrong.
+
+## Verifying it in Postman
+
+Postman fires HTTP requests directly at the backend, with no browser and no
+frontend in the way. That is its real value: when a request fails there, the
+frontend is not the problem, and when it succeeds there but fails in the app, the
+frontend definitely is.
+
+Deleting a resource end to end — the sequence I ran for every endpoint:
+
+1. **Confirm it exists.** `GET http://localhost:8080/api/resources` and copy a
+   real `resourceId` out of the response. Never invent an id for a test.
+2. **Set up the delete.** New request, method **DELETE**, URL
+   `http://localhost:8080/api/resources/<the id you copied>`. No body needed —
+   the id is in the path.
+3. **Send it.** Expect **204 No Content** and an empty response pane. An empty
+   body here is the correct answer, not a sign nothing happened.
+4. **Confirm it is gone.** `GET http://localhost:8080/api/resources/<same id>`
+   should now return **404 Not Found**.
+5. **Confirm the collection agrees.** `GET /api/resources` should come back one
+   item shorter.
+
+Step 4 is the one that actually proves anything. A 204 on its own only says the
+server did not throw.
+
+For the POST, the setup is slightly different because there is a payload:
+
+```text
+POST http://localhost:8080/api/resources
+Body → raw → JSON
+
+{
+  "title": "AWS Well-Architected Framework",
+  "url": "https://aws.amazon.com/architecture/well-architected/",
+  "category": "cloud"
+}
+```
+
+Choosing **JSON** in that dropdown is what sets `Content-Type: application/json`.
+Leave it on **Text** and the request is rejected with a 400 before it reaches any
+code you wrote — which looks like a bug in the endpoint and is not.
+
+<Callout variant="insight" title="Postman never sees a CORS error">
+  CORS is enforced by browsers, not servers. So an endpoint that works perfectly in Postman and
+  fails in the browser is almost never broken — it is a cross-origin problem. Knowing which of the
+  two tools *can* produce a given error narrows things down before you read a single log line.
+</Callout>
+
+## Putting it together
+
+The four endpoints, and what each one taught:
+
+| Endpoint                     | Payload in | Success | Idea                              |
+| ---------------------------- | ---------- | ------- | --------------------------------- |
+| `GET /api/resources`         | none       | `200`   | a collection read; empty is valid |
+| `GET /api/resources/{id}`    | none       | `200`   | path variables, and honest `404`s |
+| `POST /api/resources`        | JSON       | `201`   | request bodies and validation     |
+| `DELETE /api/resources/{id}` | none       | `204`   | status codes with no body         |
+
+None of these are complicated on their own. What took the time was learning that
+the address, the method, the headers, the payload and the status code are five
+separate things — and that most confusing failures are one of them being wrong
+while the other four look fine.
