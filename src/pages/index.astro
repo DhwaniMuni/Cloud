@@ -1,0 +1,172 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Timeline from '../components/Timeline.astro';
+import { getWeeks } from '../lib/weeks';
+import { site } from '../data/site';
+import { weekPath } from '../lib/paths';
+import { formatDateRange } from '../lib/format';
+
+const weeks = await getWeeks();
+const capstone = weeks.find((entry) => entry.data.week === site.capstoneWeek);
+
+// The program's overall span, derived from content rather than hardcoded.
+const programRange =
+  weeks.length > 0
+    ? formatDateRange(weeks[0]!.data.startDate, weeks[weeks.length - 1]!.data.endDate)
+    : undefined;
+---
+
+<BaseLayout title="Overview" description={site.summary} current="overview">
+  <div class="home">
+    <header class="hero">
+      <h1>{site.author}</h1>
+      <p class="hero-tagline">
+        {site.tagline}
+        {programRange && <span class="hero-range">· {programRange}</span>}
+      </p>
+      <p class="hero-summary">{site.summary}</p>
+    </header>
+
+    <section class="timeline-section" aria-labelledby="timeline-heading">
+      <h2 id="timeline-heading" class="section-heading">The eight weeks</h2>
+      <Timeline weeks={weeks} />
+    </section>
+
+    {
+      capstone && (
+        <section class="capstone" aria-labelledby="capstone-heading">
+          <p class="capstone-eyebrow">Capstone</p>
+          <h2 id="capstone-heading" class="capstone-title">
+            <a href={weekPath(capstone.data.week)}>{capstone.data.title}</a>
+          </h2>
+          <p class="capstone-hook">{capstone.data.hook}</p>
+          <p class="capstone-cta">
+            <a href={weekPath(capstone.data.week)}>
+              Read the week {capstone.data.week} writeup
+              <span aria-hidden="true"> →</span>
+            </a>
+          </p>
+        </section>
+      )
+    }
+  </div>
+</BaseLayout>
+
+<style>
+  .home {
+    max-width: var(--content-max);
+    margin-inline: auto;
+    padding: var(--space-2xl) var(--gutter) 0;
+  }
+
+  /* ── Hero — compact by design; depth lives one click down. ─────────────── */
+
+  .hero {
+    padding-bottom: var(--space-xl);
+    border-bottom: var(--border-width) solid var(--border);
+  }
+
+  .hero h1 {
+    font-size: var(--text-4xl);
+  }
+
+  .hero-tagline {
+    margin-top: var(--space-3xs);
+    font-size: var(--text-lg);
+    color: var(--text-secondary);
+  }
+
+  .hero-range {
+    color: var(--text-muted);
+    font-size: var(--text-base);
+  }
+
+  .hero-summary {
+    margin-top: var(--space-md);
+    max-width: var(--measure);
+    line-height: var(--leading-relaxed);
+    color: var(--text-secondary);
+  }
+
+  /* ── Timeline ───────────────────────────────────────────────────────────── */
+
+  .timeline-section {
+    margin-top: var(--space-xl);
+  }
+
+  .section-heading {
+    margin-bottom: var(--space-md);
+    font-size: var(--text-xs);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  /* ── Capstone callout ───────────────────────────────────────────────────── */
+
+  .capstone {
+    margin-top: var(--space-lg);
+    padding: var(--space-md) var(--space-lg);
+    background-color: var(--accent-subtle);
+    border: var(--border-width) solid var(--accent-border);
+    border-radius: var(--radius-lg);
+  }
+
+  .capstone-eyebrow {
+    font-size: var(--text-2xs);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  .capstone-title {
+    margin-top: var(--space-3xs);
+    font-size: var(--text-2xl);
+  }
+
+  .capstone-title a {
+    color: var(--text);
+    text-decoration: none;
+  }
+
+  .capstone-title a:hover {
+    color: var(--accent);
+  }
+
+  .capstone-hook {
+    margin-top: var(--space-2xs);
+    max-width: var(--measure);
+    color: var(--text-secondary);
+    line-height: var(--leading-normal);
+  }
+
+  .capstone-cta {
+    margin-top: var(--space-sm);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-medium);
+  }
+
+  .capstone-cta a {
+    text-decoration: none;
+  }
+
+  .capstone-cta a:hover {
+    text-decoration: underline;
+  }
+
+  @media (max-width: 30rem) {
+    .home {
+      padding-top: var(--space-xl);
+    }
+
+    .hero h1 {
+      font-size: var(--text-3xl);
+    }
+
+    .capstone {
+      padding: var(--space-sm) var(--space-md);
+    }
+  }
+</style>
