@@ -109,60 +109,59 @@ Here is the whole system for the read case — the browser, the backend, and the
 database it pulls from:
 
 <ArchitectureDiagram
-  caption="One GET request, all the way down and back. The frontend never talks to DynamoDB; only the backend does."
-  alt="A React frontend in the browser sends an HTTP GET request for /api/resources/1 to a Spring Boot backend, which returns 200 OK with a JSON body. The backend in turn calls DynamoDB with a GetItem request for that partition key and receives the item's attributes back."
+  caption="One GET request, all the way down and back. The frontend never talks to DynamoDB — only the backend does."
+  alt="Three boxes left to right. The browser, running a React frontend, sends GET /api/resources/1 over HTTP and receives 200 OK with a JSON body. The middle box is the Spring Boot backend, containing three stacked layers: a controller that owns the HTTP mapping and status codes, a service holding the business rules, and a repository that talks to storage. The repository calls DynamoDB with GetItem for the partition key and receives the item's attributes back. Only the repository crosses into DynamoDB, and only the controller is reached from the browser."
 >
-  <svg viewBox="0 0 900 300" role="presentation">
+  <svg viewBox="0 0 880 252" role="presentation">
+    {/* Every <text> label below is kept on ONE line on purpose: MDX wraps a
+        label sitting on its own line in a <p>, and a <p> inside an SVG <text>
+        renders as nothing at all — boxes and arrows but no words. */}
+
+    {/* ── Boxes ─────────────────────────────────────────────────────────── */}
     <g fill="none" stroke="currentColor" stroke-width="1.5">
-      <rect x="8" y="110" width="170" height="80" rx="8" />
-      <rect x="330" y="110" width="200" height="80" rx="8" />
-      <rect x="700" y="110" width="192" height="80" rx="8" />
-      <path d="M186 140h136m0 0-7-4.5m7 4.5-7 4.5" />
-      <path d="M322 170H186m0 0 7-4.5m-7 4.5 7 4.5" />
-      <path d="M538 140h154m0 0-7-4.5m7 4.5-7 4.5" />
-      <path d="M692 170H538m0 0 7-4.5m-7 4.5 7 4.5" />
+      <rect x="4" y="66" width="150" height="92" rx="8" />
+      <rect x="288" y="28" width="234" height="176" rx="8" />
+      <rect x="656" y="66" width="220" height="92" rx="8" />
+      {/* The three layers inside the backend, top to bottom. */}
+      <rect x="304" y="70" width="202" height="36" rx="5" opacity="0.5" />
+      <rect x="304" y="112" width="202" height="36" rx="5" opacity="0.5" />
+      <rect x="304" y="154" width="202" height="36" rx="5" opacity="0.5" />
     </g>
+
+    {/* ── Arrows: request on the upper line, response on the lower ───────── */}
+    <g fill="none" stroke="currentColor" stroke-width="1.5">
+      <path d="M158 88h122m0 0-7-4.5m7 4.5-7 4.5" />
+      <path d="M280 136H158m0 0 7-4.5m-7 4.5 7 4.5" />
+      <path d="M526 88h122m0 0-7-4.5m7 4.5-7 4.5" />
+      <path d="M648 136H526m0 0 7-4.5m-7 4.5 7 4.5" />
+    </g>
+
+    {/* ── Labels ─────────────────────────────────────────────────────────── */}
     <g fill="currentColor" font-family="system-ui, sans-serif" text-anchor="middle">
-      <text x="93" y="142" font-size="14">
-        Browser
-      </text>
-      <text x="93" y="163" font-size="11" opacity="0.75">
-        React frontend
-      </text>
-      <text x="430" y="136" font-size="14">
-        Spring Boot backend
-      </text>
-      <text x="430" y="157" font-size="11" opacity="0.75">
-        Controller
-      </text>
-      <text x="430" y="175" font-size="11" opacity="0.75">
-        Service → Repository
-      </text>
-      <text x="796" y="142" font-size="14">
-        DynamoDB
-      </text>
-      <text x="796" y="163" font-size="11" opacity="0.75">
-        Resources table
-      </text>
-      <text x="254" y="128" font-size="11">
-        GET /api/resources/1
-      </text>
-      <text x="254" y="190" font-size="11">
-        200 OK + JSON
-      </text>
-      <text x="615" y="128" font-size="11">
-        GetItem(resourceId)
-      </text>
-      <text x="615" y="190" font-size="11">
-        item attributes
-      </text>
-      <text x="450" y="240" font-size="11" opacity="0.75">
-        HTTP over the network · JSON text
-      </text>
-      <text x="796" y="240" font-size="11" opacity="0.75">
-        AWS SDK · private
-      </text>
+      <text x="79" y="106" font-size="14" font-weight="600">Browser</text>
+      <text x="79" y="127" font-size="11" opacity="0.75">React frontend</text>
+
+      <text x="405" y="18" font-size="14" font-weight="600">Spring Boot backend</text>
+      <text x="405" y="232" font-size="11" opacity="0.7">HTTP stops at the controller</text>
+      <text x="405" y="93" font-size="12">Controller</text>
+      <text x="405" y="135" font-size="12">Service</text>
+      <text x="405" y="177" font-size="12">Repository</text>
+
+      <text x="766" y="106" font-size="14" font-weight="600">DynamoDB</text>
+      <text x="766" y="127" font-size="11" opacity="0.75">Resources table</text>
+
+      {/* Request above each arrow, response below it. */}
+      <text x="219" y="78" font-size="11">GET /api/resources/1</text>
+      <text x="219" y="154" font-size="11">200 OK + JSON</text>
+      <text x="587" y="78" font-size="11">GetItem(resourceId)</text>
+      <text x="587" y="154" font-size="11">item attributes</text>
+
+      {/* What each hop travels over, under the pair of arrows it describes.
+          Keep these short — they sit side by side and will collide if long. */}
+      <text x="219" y="232" font-size="11" opacity="0.7">HTTP · public</text>
+      <text x="587" y="232" font-size="11" opacity="0.7">AWS SDK · private</text>
     </g>
+
   </svg>
 </ArchitectureDiagram>
 
