@@ -14,9 +14,9 @@ export function path(to: string): string {
   return joined.replace(/\/+$/, '') || '/';
 }
 
-/** Canonical path for a week page. */
-export function weekPath(week: number): string {
-  return path(`week/${week}`);
+/** Canonical path for a topic page. */
+export function topicPath(slug: string): string {
+  return path(`topic/${slug}`);
 }
 
 /** Anchor on the skills page for a given tool slug. */

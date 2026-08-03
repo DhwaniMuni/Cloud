@@ -1,11 +1,11 @@
 /**
  * The tools registry.
  *
- * Every tool named in a week's `tools:` frontmatter must have an entry here — the
+ * Every tool named in a topic's `tools:` frontmatter must have an entry here — the
  * content schema validates against these keys, so a typo or an unregistered tool
  * fails the build rather than silently rendering an uncategorised chip.
  *
- * To add a tool: add one entry below, then use the exact key in week frontmatter.
+ * To add a tool: add one entry below, then use the exact key in topic frontmatter.
  */
 
 export const TOOL_CATEGORIES = [
@@ -36,6 +36,7 @@ export const tools = {
   'Amazon EC2': { category: 'Cloud', docs: 'https://docs.aws.amazon.com/ec2/' },
   'Amazon VPC': { category: 'Cloud', docs: 'https://docs.aws.amazon.com/vpc/' },
   'Amazon CloudWatch': { category: 'Cloud', docs: 'https://docs.aws.amazon.com/cloudwatch/' },
+  'Amazon DynamoDB': { category: 'Cloud', docs: 'https://docs.aws.amazon.com/dynamodb/' },
   'OpenSearch Serverless': {
     category: 'Cloud',
     docs: 'https://docs.aws.amazon.com/opensearch-service/latest/developerguide/serverless.html',
@@ -73,6 +74,10 @@ export const tools = {
   PostgreSQL: { category: 'Backend', docs: 'https://www.postgresql.org/docs/' },
   'REST APIs': { category: 'Backend' },
   Maven: { category: 'Backend', docs: 'https://maven.apache.org/guides/' },
+  Postman: {
+    category: 'Backend',
+    docs: 'https://learning.postman.com/docs/introduction/overview/',
+  },
 
   // ── Frontend ─────────────────────────────────────────────────────────────
   React: { category: 'Frontend', docs: 'https://react.dev/' },
