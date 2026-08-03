@@ -14,24 +14,30 @@
 
 import { readdir, readFile } from 'node:fs/promises';
 import { join, relative, posix } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const DIST = process.argv[2] ?? 'dist';
 
 /**
  * Built hrefs are prefixed with Astro's `base` (e.g. `/ignite-2026/skills`) while
  * paths derived from `dist/` are not, so the base has to come off before the two
- * can be compared. Read from astro.config.mjs rather than hardcoded, so changing
- * the repo name does not silently disable this check.
+ * can be compared.
+ *
+ * The config is imported and its resolved `base` read, rather than pattern-matched
+ * out of the source. `base` may be computed (e.g. conditional on CI), so anything
+ * that reads the literal text would silently fall back to '/' and stop catching
+ * broken links entirely.
  */
 const BASE = await readBase();
 
 async function readBase() {
   try {
-    const config = await readFile('astro.config.mjs', 'utf8');
-    const match = config.match(/^const BASE\s*=\s*['"]([^'"]*)['"]/m);
-    return match ? normalise(match[1]) : '/';
-  } catch {
-    return '/';
+    const url = pathToFileURL(join(process.cwd(), 'astro.config.mjs')).href;
+    const config = (await import(url)).default;
+    return normalise(config?.base ?? '/');
+  } catch (error) {
+    console.error(`Could not read \`base\` from astro.config.mjs: ${error.message}`);
+    process.exit(1);
   }
 }
 
@@ -112,27 +118,29 @@ for (const file of files) {
 // in `pages`, so exclude them from route checking by extension.
 const ASSET = /\.(css|js|mjs|map|png|jpe?g|svg|webp|avif|gif|ico|woff2?|txt|xml|json|pdf)$/i;
 
-const problems = [];
+// A Set, because the same broken link usually appears on several pages (nav,
+// chips) and the reported count should match the number of lines printed.
+const problems = new Set();
 
 for (const link of links) {
   if (ASSET.test(link.target)) continue;
 
   const ids = pages.get(link.target);
   if (!ids) {
-    problems.push(`${link.from} → ${link.href}  (no such page)`);
+    problems.add(`${link.from} → ${link.href}  (no such page)`);
     continue;
   }
   if (link.hash && !ids.has(link.hash)) {
-    problems.push(`${link.from} → ${link.href}  (no element with id "${link.hash}")`);
+    problems.add(`${link.from} → ${link.href}  (no element with id "${link.hash}")`);
   }
 }
 
 const checked = links.filter((l) => !ASSET.test(l.target)).length;
 console.log(`Checked ${checked} internal link(s) across ${pages.size} page(s).`);
 
-if (problems.length > 0) {
-  console.error(`\n${problems.length} broken internal link(s):\n`);
-  for (const problem of [...new Set(problems)].sort()) console.error(`  ${problem}`);
+if (problems.size > 0) {
+  console.error(`\n${problems.size} broken internal link(s):\n`);
+  for (const problem of [...problems].sort()) console.error(`  ${problem}`);
   process.exit(1);
 }
 

@@ -3,14 +3,12 @@ import { defineConfig } from 'astro/config';
 import mdx from '@astrojs/mdx';
 import { transformerCodeMeta } from './src/lib/shiki-transformers.mjs';
 
-// TODO: replace both of these with your own values before deploying.
-// `site`  — your GitHub Pages origin: https://<USERNAME>.github.io
-// `base`  — the repo name, with a leading slash: '/<REPO_NAME>'
-//
-// Using a custom domain instead? See the "Deployment" section of README.md —
-// you set `site` to the domain and `base` to '/'.
+// TODO: replace SITE with your GitHub Pages origin: https://<USERNAME>.github.io
+// BASE is set automatically: '/' locally, '/ignite-2026' in GitHub Actions.
+// Using a custom domain? See the "Deployment" section of README.md —
+// set SITE to your domain and BASE to '/'.
 const SITE = 'https://USERNAME.github.io';
-const BASE = '/ignite-2026';
+const BASE = process.env.GITHUB_ACTIONS ? '/ignite-2026' : '/';
 
 export default defineConfig({
   site: SITE,

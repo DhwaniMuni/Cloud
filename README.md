@@ -171,18 +171,26 @@ paint so there is no flash of the wrong one.
 Not wired up yet — the site builds to static files in `dist/`, which any static
 host will serve.
 
-When you're ready for GitHub Pages, the two values to set are at the top of
+The two values that control URLs are at the top of
 [astro.config.mjs](astro.config.mjs):
 
 ```js
-const SITE = 'https://USERNAME.github.io'; // your Pages origin
-const BASE = '/ignite-2026'; // the repo name, leading slash
+const SITE = 'https://USERNAME.github.io'; // TODO: your Pages origin
+const BASE = process.env.GITHUB_ACTIONS ? '/ignite-2026' : '/';
+```
+
+`BASE` is conditional so local builds serve from the root (`/week/5`) while CI
+builds get the repo prefix Pages needs (`/ignite-2026/week/5`). To reproduce a
+production build locally, set the variable yourself:
+
+```bash
+GITHUB_ACTIONS=true npm run build && npm run check:links
 ```
 
 **Using a custom domain instead?** Set `SITE` to the domain
-(`https://example.com`) and `BASE` to `'/'`, then add a `public/CNAME` file
-containing just the domain. With `BASE = '/'` every internal link drops the repo
-prefix automatically — links are built through the helpers in
+(`https://example.com`) and `BASE` to `'/'` unconditionally, then add a
+`public/CNAME` file containing just the domain. Every internal link drops the
+repo prefix automatically — links are built through the helpers in
 [src/lib/paths.ts](src/lib/paths.ts), so nothing else needs changing.
 
 Always build internal links with those helpers (`path()`, `weekPath()`) rather
