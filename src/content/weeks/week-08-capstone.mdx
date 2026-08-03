@@ -1,0 +1,245 @@
+---
+week: 8
+title: 'Capstone: agentic RAG on Amazon Bedrock'
+hook: 'Replaced a hand-orchestrated Retrieve-and-Converse RAG pipeline with a single InvokeAgent call, a Lambda-backed action group, and citations traced back to source documents.'
+startDate: 2026-07-27
+endDate: 2026-08-01
+goal: 'Ship a question-answering assistant over internal documentation that can also take action — not just retrieve text. Move the orchestration out of application code and into a Bedrock Agent, and make every answer cite the document it came from.'
+tools:
+  - Amazon Bedrock
+  - Bedrock Agents
+  - Bedrock Knowledge Bases
+  - Titan Embeddings
+  - OpenSearch Serverless
+  - AWS Lambda
+  - Java
+  - Spring Boot
+  - React
+challenges:
+  - title: 'The agent answered confidently from the wrong document'
+    problem: 'Retrieval returned five chunks and the model synthesised across all of them, including a deprecated runbook that contradicted the current one. The answer read as authoritative and was wrong — the worst possible failure mode.'
+    solution: 'Two changes. I added metadata filtering on a `status` field so deprecated documents are excluded at retrieval time rather than being argued with at generation time, and I made the agent instruction explicit that it must answer from the retrieved passages or say it does not know. Grounding is a retrieval problem first and a prompting problem second.'
+  - title: 'Citations pointed at chunks, not at anything a human could open'
+    problem: 'The `InvokeAgent` trace gave me chunk-level references with S3 URIs and byte spans. Surfacing those in the UI was useless — nobody can act on `s3://docs/bundle-3.txt` at offset 8400.'
+    solution: 'I attached document-level metadata at ingestion time (title, source URL, section anchor) via the `.metadata.json` sidecar files the Knowledge Base reads, then mapped each returned chunk back to that metadata before sending it to the frontend. Citations became clickable links into the real docs.'
+  - title: 'Streaming responses and the action-group round trip fought each other'
+    problem: 'With streaming enabled the UI showed a long silence while the agent invoked the Lambda action group, then a burst of text. Users assumed it had hung and refreshed, firing a second invocation.'
+    solution: 'I consumed the `InvokeAgent` event stream and surfaced trace events as progress states — "searching documentation", "checking ticket status" — instead of buffering until the first token of the answer. The latency did not change; the perceived latency changed completely.'
+learned:
+  - 'Agentic RAG is not "RAG plus a model". Moving orchestration into the agent deleted a whole class of code I had written to decide when to retrieve — but it also moved the debugging surface into traces, which I had to learn to read.'
+  - 'Chunking strategy dominates answer quality. Fixed-size chunks split procedures mid-step; chunking on document headings kept each retrieved passage independently meaningful.'
+  - 'A citation is a product feature, not a debug affordance. If a user cannot click through to verify an answer, they either trust it blindly or not at all, and both are bad.'
+  - 'Action groups need the same input validation as any public endpoint. The model chooses the arguments, and the model can be wrong or be led.'
+  - 'Knowing when to say "I do not know" is a design decision you make explicitly. It does not emerge from a good model.'
+artifacts:
+  - label: 'Capstone repo: Spring Boot service and React client'
+    url: 'https://github.com/USERNAME/REPO'
+    kind: repo
+  - label: 'PR: swap Retrieve+Converse for InvokeAgent'
+    url: 'https://github.com/USERNAME/REPO/pull/2'
+    kind: pr
+  - label: 'Design doc: agent, action group, and citation flow'
+    url: 'https://github.com/USERNAME/REPO/blob/main/docs/design.md'
+    kind: doc
+  - label: 'Demo walkthrough'
+    url: 'https://github.com/USERNAME/REPO#demo'
+    kind: demo
+draft: false
+---
+
+import PipelineDiagram from '../../components/PipelineDiagram.astro';
+import ArchitectureDiagram from '../../components/ArchitectureDiagram.astro';
+import Callout from '../../components/Callout.astro';
+
+The capstone began as ordinary RAG: embed the docs, retrieve the top _k_ chunks,
+stuff them into a prompt, return the answer. It worked, and it was also a
+dead end — it could answer questions but could not *do* anything, and the
+orchestration logic lived in my application where every new capability meant
+another branch.
+
+## Where it started: Retrieve + Converse
+
+The original flow put my service in the middle of every decision:
+
+```java
+// The orchestration I ended up deleting.
+RetrieveRequest retrieve = RetrieveRequest.builder()
+    .knowledgeBaseId(knowledgeBaseId)
+    .retrievalQuery(q -> q.text(userQuestion))
+    .retrievalConfiguration(c -> c.vectorSearchConfiguration(v -> v.numberOfResults(5)))
+    .build();
+
+List<KnowledgeBaseRetrievalResult> chunks =
+    bedrockAgentRuntime.retrieve(retrieve).retrievalResults();
+
+// I decide the prompt shape, the citation format, and whether to retrieve at all.
+String context = chunks.stream()
+    .map(r -> r.content().text())
+    .collect(Collectors.joining("\n\n---\n\n"));
+
+ConverseRequest converse = ConverseRequest.builder()
+    .modelId(modelId)
+    .system(s -> s.text(SYSTEM_PROMPT.formatted(context)))
+    .messages(m -> m.role(ConversationRole.USER).content(c -> c.text(userQuestion)))
+    .build();
+```
+
+Every question took exactly one retrieval, whether or not it needed one, and
+"check whether ticket ABC-123 is still open" was unanswerable — there was no
+path from the model to an API call.
+
+## Where it ended: one InvokeAgent call
+
+<PipelineDiagram
+  caption="A single agent invocation, with the agent deciding which steps it needs."
+  stages={[
+    { label: 'Question', detail: 'React client posts to the Spring Boot API', icon: '◇' },
+    { label: 'InvokeAgent', detail: 'One call; the agent plans its own steps', icon: '◆' },
+    { label: 'Retrieve or act', detail: 'Knowledge Base search, Lambda action group, or both', icon: '△' },
+    { label: 'Grounded answer', detail: 'Streamed back with document-level citations', icon: '○' },
+  ]}
+/>
+
+The replacement is close to embarrassingly small:
+
+```java
+InvokeAgentRequest request = InvokeAgentRequest.builder()
+    .agentId(agentId)
+    .agentAliasId(agentAliasId)
+    .sessionId(sessionId)        // conversation memory is the agent's problem now
+    .inputText(userQuestion)
+    .enableTrace(true)           // the only way to see what it decided to do
+    .build();
+
+// The response is an event stream: text chunks, citations, and trace events
+// interleaved. Progress states come from the trace, not from guesswork.
+bedrockAgentRuntime.invokeAgent(request, InvokeAgentResponseHandler.builder()
+    .subscriber(visitor -> visitor
+        .onChunk(chunk -> emitter.text(chunk.bytes().asUtf8String()))
+        .onTrace(trace -> emitter.progress(describe(trace)))
+        .build())
+    .build());
+```
+
+<Callout variant="insight" title="What actually changed">
+  The line count barely moved — but the *decisions* moved. Whether to retrieve, how
+  many times, whether to call a tool first: those were `if` statements in my service
+  and are now the agent's job. My service is a transport layer again.
+</Callout>
+
+### Reading traces instead of reading logs
+
+Enabling `enableTrace` was not optional. Without it, a wrong answer is a black
+box. With it, you can see the rationale, the retrieval queries the agent actually
+issued (often a rewritten version of the user's question), and which action group
+it chose. Most of my debugging this week was reading traces, not stack traces.
+
+## Architecture
+
+<ArchitectureDiagram
+  caption="The capstone's components and the two paths a question can take."
+  alt="A React client calls a Spring Boot API, which invokes a Bedrock Agent. The agent either queries a Knowledge Base backed by Titan Embeddings and OpenSearch Serverless, or invokes a Lambda action group, then returns a cited answer."
+>
+  {/* TODO: replace with the real architecture SVG. */}
+  <svg viewBox="0 0 720 240" role="presentation">
+    <g fill="none" stroke="currentColor" stroke-width="1.5">
+      <rect x="8" y="96" width="96" height="48" rx="6" />
+      <rect x="152" y="96" width="112" height="48" rx="6" />
+      <rect x="312" y="96" width="104" height="48" rx="6" />
+      <rect x="464" y="24" width="128" height="48" rx="6" />
+      <rect x="464" y="168" width="128" height="48" rx="6" />
+      <rect x="624" y="24" width="80" height="48" rx="6" />
+      <path d="M104 120h48M264 120h48" />
+      <path d="M416 120q24 0 24-24t24-24M416 120q24 0 24 24t24 24" />
+      <path d="M592 48h32" />
+    </g>
+    <g fill="currentColor" font-size="12" font-family="system-ui, sans-serif" text-anchor="middle">
+      <text x="56" y="125">React</text>
+      <text x="208" y="125">Spring Boot</text>
+      <text x="364" y="125">Agent</text>
+      <text x="528" y="53">Knowledge Base</text>
+      <text x="528" y="197">Lambda</text>
+      <text x="664" y="53">OpenSearch</text>
+    </g>
+  </svg>
+</ArchitectureDiagram>
+
+## The Lambda-backed action group
+
+An action group is how the agent reaches outside its own knowledge. The contract
+is an OpenAPI schema the agent reads to decide *whether* and *how* to call you:
+
+```json
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/tickets/{ticketId}": {
+      "get": {
+        "operationId": "getTicketStatus",
+        "description": "Return the current status, assignee, and last update time for one ticket. Use when the user asks whether work is done, who owns it, or when it last moved.",
+        "parameters": [
+          {
+            "name": "ticketId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "pattern": "^[A-Z]{2,10}-[0-9]{1,6}$" }
+          }
+        ]
+      }
+    }
+  }
+}
+```
+
+The `description` is not documentation — it is the prompt the agent uses to route.
+Vague descriptions produced an agent that called the tool for everything or never
+called it at all; being explicit about *when* to use it fixed the routing.
+
+<Callout variant="warning" title="The model supplies the arguments">
+  An action group is a public endpoint whose caller is a language model. Validate
+  everything: I match `ticketId` against the pattern above inside the Lambda too,
+  because a schema in the OpenAPI document is a hint to the model, not a guarantee
+  at the boundary.
+</Callout>
+
+## Citations that a human can follow
+
+The Knowledge Base returns chunk-level references. To turn those into something
+clickable, I attach metadata at ingestion time using sidecar files:
+
+```json
+{
+  "metadataAttributes": {
+    "title": "Deploying the payments service",
+    "sourceUrl": "https://wiki.internal/eng/payments/deploy",
+    "section": "rollback",
+    "status": "current",
+    "updatedAt": "2026-07-14"
+  }
+}
+```
+
+That `status` attribute is what powers the retrieval filter that fixed the
+deprecated-runbook problem — the answer to "stop citing the old doc" was to stop
+retrieving it:
+
+```java
+RetrievalFilter currentOnly = RetrievalFilter.builder()
+    .equals(f -> f.key("status").value(Document.fromString("current")))
+    .build();
+```
+
+Each returned chunk carries these attributes back, so the API maps them into a
+citation list — title, section, and a real URL — that the React client renders
+beneath the answer. Users click through and verify. That single affordance did
+more for trust than any change to the prompt.
+
+### What I would do next
+
+- **Evaluate systematically.** I tested by asking questions I already knew the
+  answers to, which is not evaluation. A fixed question set with expected sources
+  would have caught the deprecated-doc problem on day one instead of day three.
+- **Guardrails on the action group.** Read-only tools are forgiving. The moment one
+  can write, "the model chose the arguments" stops being a footnote.
+- **Cache retrieval for repeated questions.** A meaningful fraction of queries were
+  near-duplicates, and every one paid full embedding and search cost.
