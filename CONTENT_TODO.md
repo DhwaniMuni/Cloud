@@ -3,11 +3,13 @@
 Tracks which topics are written. A topic is **done** when `draft: false` — that is
 what removes the "WIP" badge from the home page and the topic page.
 
-| #   | Topic                                         | File                    | Status |
-| --- | --------------------------------------------- | ----------------------- | ------ |
-| 1   | API endpoints: how a URL becomes running code | [api-endpoints.mdx][t1] | ☑ Done |
+| #   | Topic                                         | File                     | Status  |
+| --- | --------------------------------------------- | ------------------------ | ------- |
+| 1   | API endpoints: how a URL becomes running code | [api-endpoints.mdx][t1]  | ☑ Done  |
+| 2   | CI/CD pipelines: from git push to live        | [cicd-pipelines.mdx][t2] | ☐ Draft |
 
 [t1]: src/content/topics/api-endpoints.mdx
+[t2]: src/content/topics/cicd-pipelines.mdx
 
 ## Next topics
 

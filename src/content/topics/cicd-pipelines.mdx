@@ -1,0 +1,673 @@
+---
+order: 2
+title: 'CI/CD pipelines: from git push to live, for a UI and an API'
+tab: 'CI/CD pipelines'
+hook: 'Teaching GitHub Actions to ship my code for me: static UI files to S3 and CloudFront, backend containers through ECR to ECS. Two pipelines, one git push.'
+goal: 'Stop deploying by hand. Understand why a frontend and a backend travel to production by completely different roads, then build both roads end to end with GitHub Actions, so that pushing to develop is the only thing a human has to do.'
+tools:
+  - GitHub Actions
+  - Docker
+  - Amazon ECR
+  - Amazon ECS
+  - Amazon S3
+  - Amazon CloudFront
+  - AWS IAM
+  - Terraform
+keyTerms:
+  - term: Pipeline
+    definition: 'An automated list of steps that takes code from a commit to running in production. Same steps every time, no human copy-pasting commands at 5pm on a Friday.'
+  - term: 'CI / CD'
+    definition: 'Continuous Integration: every change gets built and checked automatically. Continuous Delivery/Deployment: every change that passes gets shipped automatically. The pipeline is where both happen.'
+  - term: 'GitHub Actions'
+    definition: "GitHub's built-in pipeline runner. You describe the steps in a YAML file under `.github/workflows/`, and GitHub spins up a fresh machine (a runner) to execute them whenever something happens in the repo."
+  - term: Workflow
+    definition: 'One YAML file = one pipeline. It says when to run (the trigger, like a push to `develop`) and what to run (jobs made of steps).'
+  - term: Artifact
+    definition: 'The thing the pipeline builds and ships. For a UI it is a folder of HTML/CSS/JS files. For an API it is a container image.'
+  - term: 'Static site'
+    definition: 'A frontend that is just files. Once React or Astro has been built, there is no server code left, only files a browser downloads and runs itself.'
+  - term: 'Amazon S3'
+    definition: 'Object storage: a giant, durable hard drive in the cloud. For a UI, the bucket is where the built files live.'
+  - term: 'Amazon CloudFront'
+    definition: "AWS's CDN (content delivery network). Hundreds of edge locations worldwide keep cached copies of your files, so a user in Tokyo downloads them from Tokyo, not from a bucket in Oregon."
+  - term: 'Cache invalidation'
+    definition: 'Telling CloudFront "throw away your cached copies, fetch fresh ones". Skip it and users keep seeing the old site even though S3 has the new one.'
+  - term: 'Container image'
+    definition: 'Your app plus everything it needs to run (runtime, libraries, config), packed into one portable bundle by Docker. Runs the same on your laptop and in AWS.'
+  - term: 'Amazon ECR'
+    definition: 'Elastic Container Registry: a private place to store container images. Think Docker Hub, but yours, inside your AWS account.'
+  - term: 'Amazon ECS / Fargate'
+    definition: 'Elastic Container Service runs your containers. Fargate is the mode where AWS also manages the servers underneath: you say "run 2 copies of this image" and it does.'
+  - term: 'Task definition'
+    definition: 'The recipe ECS follows: which image, how much CPU and memory, which port, which environment variables. Every change makes a new numbered revision.'
+  - term: 'Service'
+    definition: 'The ECS thing that keeps N tasks (running containers) alive, replaces any that die, and rolls out new task definition revisions.'
+  - term: 'Application Load Balancer (ALB)'
+    definition: 'The front door for the API. It gets every request, sends it to a healthy task, and stops routing to tasks that fail their health check.'
+  - term: 'Rolling deployment'
+    definition: 'Start new tasks, wait until they are healthy, then retire the old ones. At no point is nothing running, so users never see downtime.'
+  - term: 'Secrets vs variables'
+    definition: 'GitHub stores both per repo. Secrets (like AWS keys) are encrypted and masked in logs. Variables (like the region or cluster name) are plain config that is fine to show.'
+learned:
+  - 'A "deploy" means something completely different depending on what you ship. For a UI it is *copy files and clear the cache*. For an API it is *replace running processes without dropping requests*.'
+  - 'S3 and CloudFront are a double act: S3 keeps the files, CloudFront hands them out quickly worldwide. The bucket stays private and only CloudFront is allowed to read it.'
+  - 'ECR stores images, ECS runs them. The registry is the pantry and the service is the kitchen, and the pipeline just keeps the pantry stocked and tells the kitchen which dish is next.'
+  - 'Tagging every image with the git commit SHA means you can always answer "what exactly is running right now?", and rolling back is just pointing at an older tag.'
+  - 'The pipeline gets its own IAM user with only the permissions it needs. If its keys ever leak, the damage stops at "can push images to one repo".'
+  - 'Pull requests get checked, not deployed. Only merged code on `develop` reaches AWS.'
+  - 'Once it works, deploying is the most boring thing I do all day, and boring is the whole point.'
+artifacts:
+  - label: 'Cloud: repo with the workflows and Terraform'
+    url: 'https://github.com/DhwaniMuni/Cloud'
+    kind: repo
+  - label: 'deploy.yml: the API pipeline'
+    url: 'https://github.com/DhwaniMuni/Cloud/blob/develop/.github/workflows/deploy.yml'
+    kind: doc
+  - label: 'pr-check.yml: the PR validation workflow'
+    url: 'https://github.com/DhwaniMuni/Cloud/blob/develop/.github/workflows/pr-check.yml'
+    kind: doc
+  - label: 'First green deploy run'
+    url: 'https://github.com/DhwaniMuni/Cloud/actions/runs/35904819297'
+    kind: demo
+draft: true
+---
+
+import PipelineDiagram from '../../components/PipelineDiagram.astro';
+import ArchitectureDiagram from '../../components/ArchitectureDiagram.astro';
+import Callout from '../../components/Callout.astro';
+
+On Day 2 I deployed by hand: pull the image, tag it, push it, poke ECS, refresh
+the browser, hope. On Day 3 I wrote it down once as a pipeline, and now a robot
+does it every time I push. This page walks through both kinds of pipeline, the
+UI one and the API one, from absolutely nothing. If you have never written a
+pipeline before, you are exactly who this is for.
+
+## The big idea: same trigger, different road
+
+Every pipeline starts the same way: **you push code, and GitHub Actions wakes
+up.** What happens next depends entirely on _what_ you are shipping.
+
+A **UI** (React, Astro, Vite…) builds into a folder of plain files. There is no
+server to run, just files to hand out. So its pipeline is basically a very
+enthusiastic file copier.
+
+An **API** (Spring Boot, Node, Python…) is a program that has to _keep running_,
+listening for requests. So its pipeline packs it into a container, stores that
+container, and then carefully swaps the running copies for new ones.
+
+<PipelineDiagram
+  caption="The UI road: build files, park them in S3, let CloudFront serve them worldwide."
+  stages={[
+    { label: 'git push', detail: 'You, the only manual step', icon: '⬆' },
+    { label: 'npm run build', detail: 'React/Astro → a dist/ folder of files', icon: '◇' },
+    { label: 'S3 sync', detail: 'Upload the files to a private bucket', icon: '▢' },
+    { label: 'CloudFront invalidate', detail: 'Clear the edge caches', icon: '○' },
+    { label: 'Live', detail: 'Served from an edge near every user', icon: '✓' },
+  ]}
+/>
+
+<PipelineDiagram
+  caption="The API road: build an image, store it in ECR, let ECS roll it out behind the load balancer."
+  stages={[
+    { label: 'git push', detail: 'Same trigger, same robot', icon: '⬆' },
+    { label: 'docker build / pull', detail: 'Pack the app into an image', icon: '◇' },
+    { label: 'Push to ECR', detail: 'Tagged with the commit SHA', icon: '▢' },
+    { label: 'Update ECS', detail: 'New task definition revision, rolling deploy', icon: '△' },
+    { label: 'Live', detail: 'ALB sends traffic to the healthy new tasks', icon: '✓' },
+  ]}
+/>
+
+And here is where each one ends up living once the pipeline is done, which is
+the part that finally made it click for me:
+
+<ArchitectureDiagram
+  caption="Two front doors. The UI is files handed out by CloudFront; the API is running containers behind an ALB."
+  alt="A browser on the left with two arrows. The top arrow goes to Amazon CloudFront, which reads from a private S3 bucket holding HTML, CSS and JS files. The bottom arrow goes to an Application Load Balancer, which forwards requests to ECS Fargate tasks running containers. Those containers were pulled from an ECR registry. The UI is static files cached at the edge; the API is live processes behind a load balancer."
+>
+  <svg viewBox="0 0 880 250" role="presentation">
+    {/* Every <text> label is kept on ONE line on purpose: MDX wraps a label on
+        its own line in a <p>, and a <p> inside SVG <text> renders nothing. */}
+
+    <g fill="none" stroke="currentColor" stroke-width="1.5">
+      <rect x="4" y="85" width="130" height="80" rx="8" />
+      <rect x="250" y="20" width="180" height="80" rx="8" />
+      <rect x="560" y="20" width="180" height="80" rx="8" />
+      <rect x="250" y="150" width="180" height="80" rx="8" />
+      <rect x="560" y="150" width="180" height="80" rx="8" />
+      <rect x="770" y="150" width="106" height="80" rx="8" opacity="0.6" />
+    </g>
+
+    <g fill="none" stroke="currentColor" stroke-width="1.5">
+      <path d="M138 110 L242 62m0 0-8 .5m8-.5-3.5 7" />
+      <path d="M138 140 L242 188m0 0-3.5-7m3.5 7-8 .5" />
+      <path d="M434 60h118m0 0-7-4.5m7 4.5-7 4.5" />
+      <path d="M434 190h118m0 0-7-4.5m7 4.5-7 4.5" />
+      <path d="M766 190h-18m0 0 7-4.5m-7 4.5 7 4.5" opacity="0.6" />
+    </g>
+
+    <g fill="currentColor" font-family="system-ui, sans-serif" text-anchor="middle">
+      <text x="69" y="122" font-size="14" font-weight="600">Browser</text>
+      <text x="69" y="142" font-size="11" opacity="0.75">your user</text>
+
+      <text x="340" y="55" font-size="14" font-weight="600">CloudFront</text>
+      <text x="340" y="75" font-size="11" opacity="0.75">CDN · edge caches</text>
+      <text x="650" y="55" font-size="14" font-weight="600">S3 bucket</text>
+      <text x="650" y="75" font-size="11" opacity="0.75">HTML · CSS · JS (private)</text>
+
+      <text x="340" y="185" font-size="14" font-weight="600">Load balancer</text>
+      <text x="340" y="205" font-size="11" opacity="0.75">ALB · health checks</text>
+      <text x="650" y="185" font-size="14" font-weight="600">ECS Fargate</text>
+      <text x="650" y="205" font-size="11" opacity="0.75">running containers</text>
+      <text x="823" y="185" font-size="13" font-weight="600">ECR</text>
+      <text x="823" y="205" font-size="11" opacity="0.75">images</text>
+
+      <text x="190" y="72" font-size="11" opacity="0.7">UI</text>
+      <text x="190" y="186" font-size="11" opacity="0.7">API</text>
+      <text x="493" y="50" font-size="11">GetObject</text>
+      <text x="493" y="180" font-size="11">forward</text>
+      <text x="493" y="245" font-size="11" opacity="0.7">ECS pulls the image from ECR at start-up</text>
+    </g>
+
+  </svg>
+</ArchitectureDiagram>
+
+## Side by side
+
+| Question                  | UI pipeline                          | API pipeline                                      |
+| ------------------------- | ------------------------------------ | ------------------------------------------------- |
+| What gets built?          | A folder of static files (`dist/`)   | A container image                                 |
+| Where is it stored?       | An **S3** bucket                     | An **ECR** repository                             |
+| Who serves it?            | **CloudFront** (edge caches)         | **ECS Fargate** tasks behind an **ALB**           |
+| What does "deploy" mean?  | Upload files + invalidate the cache  | New task definition + rolling replacement         |
+| How do you know it works? | Load the page, check the new version | ECS says "steady state" + ALB targets healthy     |
+| How long does it take?    | About a minute                       | A few minutes (new tasks must pass health checks) |
+| Rolling back?             | Re-run the previous commit's deploy  | Point the service at the previous revision        |
+
+<Callout variant="insight" title="Why not just put the API in S3 too?">
+  S3 can only hand out files; it cannot _run_ anything. The moment your code needs to answer `GET
+  /api/resources` by thinking (querying a database, checking a login), it needs a process that is
+  always on. That is what ECS is for.
+</Callout>
+
+## Before either pipeline: the setup
+
+Both pipelines need the same three things before the YAML matters.
+
+### 1. A GitHub repo with a workflows folder
+
+GitHub Actions looks for pipelines in exactly one place:
+
+```text
+your-repo/
+└── .github/
+    └── workflows/
+        ├── deploy.yml      ← runs on push to develop
+        └── pr-check.yml    ← runs on pull requests
+```
+
+Any `.yml` file in there is a workflow. Commit it and it appears in the repo's
+**Actions** tab. No other setup needed.
+
+### 2. An AWS identity just for the pipeline
+
+The robot needs AWS credentials, but not _your_ credentials. Make it its own IAM
+user that can do the pipeline's job and nothing else. For the API pipeline that
+is:
+
+```hcl
+resource "aws_iam_user" "github_actions" {
+  name = "my-app-github-actions"
+}
+
+resource "aws_iam_user_policy" "github_actions_deploy" {
+  name = "my-app-deploy"
+  user = aws_iam_user.github_actions.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      # Log in to ECR (this one can't be scoped to a repo).
+      { Effect = "Allow", Action = "ecr:GetAuthorizationToken", Resource = "*" },
+      # Push images, but only to this one repository.
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:BatchCheckLayerAvailability", "ecr:BatchGetImage", "ecr:CompleteLayerUpload",
+          "ecr:DescribeImages", "ecr:InitiateLayerUpload", "ecr:PutImage", "ecr:UploadLayerPart",
+        ]
+        Resource = aws_ecr_repository.app.arn
+      },
+      # Read and register task definitions.
+      {
+        Effect   = "Allow"
+        Action   = ["ecs:DescribeTaskDefinition", "ecs:RegisterTaskDefinition"]
+        Resource = "*"
+      },
+      # Update this one service.
+      {
+        Effect   = "Allow"
+        Action   = ["ecs:DescribeServices", "ecs:UpdateService"]
+        Resource = aws_ecs_service.app.id
+      },
+      # Let ECS use the task execution role on the new revision.
+      { Effect = "Allow", Action = "iam:PassRole", Resource = aws_iam_role.task_execution.arn },
+    ]
+  })
+}
+```
+
+Then create an access key for it (in the IAM console, or
+`aws iam create-access-key --user-name my-app-github-actions`). You will paste
+it into GitHub in the next step and then never look at it again.
+
+### 3. Secrets and variables in GitHub
+
+Go to **Repository → Settings → Secrets and variables → Actions**, or use the
+`gh` CLI:
+
+```bash
+# Secrets: encrypted, masked as *** in every log.
+gh secret set AWS_ACCESS_KEY_ID
+gh secret set AWS_SECRET_ACCESS_KEY
+
+# Variables: plain config, fine to be visible.
+gh variable set AWS_REGION     -b us-west-2
+gh variable set ECR_REPOSITORY -b my-app
+gh variable set ECS_CLUSTER    -b my-app-cluster
+gh variable set ECS_SERVICE    -b my-app-service
+gh variable set ALB_URL        -b http://my-app-alb-123456.us-west-2.elb.amazonaws.com
+```
+
+In the YAML you read them as `${{ secrets.NAME }}` and `${{ vars.NAME }}`.
+
+<Callout variant="warning" title="Keys never go in the code">
+  Not in the YAML, not in a `.env` you commit, not "just for a minute". Git remembers everything
+  forever, and bots scan public repos for AWS keys within minutes. Same goes for
+  `terraform.tfstate`: add it to `.gitignore` on day one.
+</Callout>
+
+## Building the API pipeline
+
+This is the one I built for the workshop. Its job: get the
+`nginxdemos/hello:plain-text` image into my ECR repo and roll it out to ECS
+Fargate. With your own app, you would swap the "pull" step for a `docker build`.
+
+**What must already exist in AWS** (I made all of it with Terraform on Day 2):
+an ECR repository, an ECS cluster, a task definition, a service with 2 tasks, an
+ALB with a target group, a CloudWatch log group, and a task execution role. The
+pipeline _updates_ these; it does not create them.
+
+Here is the whole workflow, one step at a time:
+
+```yaml
+name: Deploy to ECS
+
+# WHEN: every push to develop, plus a "Run workflow" button in the Actions tab.
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+# Two pushes in quick succession queue up instead of fighting over the service.
+concurrency:
+  group: deploy-${{ vars.ECS_SERVICE }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_IMAGE: nginxdemos/hello:plain-text
+  # My Fargate tasks run on ARM64; GitHub's runners are amd64. Ask for the right one.
+  PLATFORM: linux/arm64
+  CONTAINER_NAME: app # must match the container name in the task definition
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest # a fresh Linux VM, thrown away afterwards
+    steps:
+      # 1. Grab the repo's code onto the runner.
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # 2. Hand the runner the pipeline's AWS identity.
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      # 3. docker login to ECR. Outputs the registry address for later steps.
+      - name: Log in to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # 4. Get the image. (Your own app: `docker build -t "$SOURCE_IMAGE" .` instead.)
+      - name: Pull public image
+        run: docker pull --platform "$PLATFORM" "$SOURCE_IMAGE"
+
+      # 5. Rename it to point at MY registry, tagged with this commit's SHA, and push.
+      - name: Tag and push image to ECR
+        id: image
+        env:
+          IMAGE_URI: ${{ steps.ecr.outputs.registry }}/${{ vars.ECR_REPOSITORY }}:${{ github.sha }}
+        run: |
+          docker tag "$SOURCE_IMAGE" "$IMAGE_URI"
+          docker push "$IMAGE_URI"
+          echo "uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
+
+      # 6. Fetch the recipe the service is using right now.
+      - name: Download current task definition
+        run: |
+          TASK_DEF_ARN=$(aws ecs describe-services \
+            --cluster "${{ vars.ECS_CLUSTER }}" \
+            --services "${{ vars.ECS_SERVICE }}" \
+            --query 'services[0].taskDefinition' --output text)
+          aws ecs describe-task-definition \
+            --task-definition "$TASK_DEF_ARN" \
+            --query taskDefinition > task-definition.json
+
+      # 7. Same recipe, new image.
+      - name: Render task definition with new image
+        id: render
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ steps.image.outputs.uri }}
+
+      # 8. Register it as a new revision, point the service at it, and WAIT
+      #    until the new tasks are healthy and the old ones are gone.
+      - name: Deploy to ECS and wait for stability
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render.outputs.task-definition }}
+          cluster: ${{ vars.ECS_CLUSTER }}
+          service: ${{ vars.ECS_SERVICE }}
+          wait-for-service-stability: true
+          wait-for-minutes: 10
+
+      # 9. Trust, but verify: hit the real public URL.
+      - name: Verify public endpoint
+        run: |
+          for i in $(seq 1 10); do
+            if curl -fsS --max-time 10 "${{ vars.ALB_URL }}"; then
+              echo "Endpoint healthy"
+              exit 0
+            fi
+            echo "Attempt $i failed, retrying in 10s..."
+            sleep 10
+          done
+          exit 1
+```
+
+The journey of one image, told as a story:
+
+1. GitHub borrows a Linux machine and gives it my code and my robot's AWS keys.
+2. The machine logs in to ECR, grabs the image, and relabels it
+   `…/ignite2-dhwani-dev:d640ba1…`, a name that says _which commit_ it came from.
+3. It pushes that image into ECR. ECR is now holding the new version, but
+   nothing is running it yet.
+4. It copies the current task definition, swaps in the new image, and registers
+   the result as revision **4**.
+5. ECS starts two fresh tasks from revision 4. The ALB health-checks them, and
+   once they pass, it sends them traffic and drains the two old ones.
+6. The workflow curls the ALB URL, gets a 200, and turns green.
+
+My first real run took **3m33s** and I did not touch the AWS console once.
+
+<Callout variant="note" title="Why tag with the commit SHA?">
+  `latest` tells you nothing, and my ECR repo is set to _immutable_ tags anyway, so the same tag
+  can't be pushed twice. The SHA is unique for free, and it maps straight back to the exact commit
+  in GitHub. "What's running in prod?" becomes a lookup, not a detective story.
+</Callout>
+
+## Building the UI pipeline
+
+Same trigger, different road. Here the "server" is a CDN and the "deploy" is a
+file upload.
+
+### The AWS side: a private bucket and a CloudFront distribution
+
+```hcl
+# The bucket that holds the built files. Fully private: nobody reads it directly.
+resource "aws_s3_bucket" "ui" {
+  bucket = "my-app-ui"
+}
+
+resource "aws_s3_bucket_public_access_block" "ui" {
+  bucket                  = aws_s3_bucket.ui.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+# Origin Access Control: CloudFront's "badge" for reading the private bucket.
+resource "aws_cloudfront_origin_access_control" "ui" {
+  name                              = "my-app-ui"
+  origin_access_control_origin_type = "s3"
+  signing_behavior                  = "always"
+  signing_protocol                  = "sigv4"
+}
+
+resource "aws_cloudfront_distribution" "ui" {
+  enabled             = true
+  default_root_object = "index.html"
+
+  origin {
+    domain_name              = aws_s3_bucket.ui.bucket_regional_domain_name
+    origin_id                = "ui-bucket"
+    origin_access_control_id = aws_cloudfront_origin_access_control.ui.id
+  }
+
+  default_cache_behavior {
+    target_origin_id       = "ui-bucket"
+    viewer_protocol_policy = "redirect-to-https"
+    allowed_methods        = ["GET", "HEAD"]
+    cached_methods         = ["GET", "HEAD"]
+    compress               = true
+    cache_policy_id        = "658327ea-f89d-4fab-a63d-7e88639e58f6" # AWS managed "CachingOptimized"
+  }
+
+  # Single-page apps: /resources/42 isn't a real file, so hand back index.html
+  # and let the React router figure it out.
+  custom_error_response {
+    error_code         = 403
+    response_code      = 200
+    response_page_path = "/index.html"
+  }
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  viewer_certificate {
+    cloudfront_default_certificate = true
+  }
+}
+
+# Only this CloudFront distribution may read objects from the bucket.
+resource "aws_s3_bucket_policy" "ui" {
+  bucket = aws_s3_bucket.ui.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "cloudfront.amazonaws.com" }
+      Action    = "s3:GetObject"
+      Resource  = "${aws_s3_bucket.ui.arn}/*"
+      Condition = { StringEquals = { "AWS:SourceArn" = aws_cloudfront_distribution.ui.arn } }
+    }]
+  })
+}
+```
+
+The pipeline's IAM user needs a much smaller permission set than the API one:
+`s3:ListBucket` on the bucket, `s3:PutObject` and `s3:DeleteObject` on
+`bucket/*`, and `cloudfront:CreateInvalidation` on the distribution. Add two
+more GitHub variables, `UI_BUCKET` and `CLOUDFRONT_DISTRIBUTION_ID`.
+
+### The workflow
+
+```yaml
+name: Deploy UI
+
+on:
+  push:
+    branches: [develop]
+    # Only redeploy the UI when UI code changed.
+    paths: ['frontend/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+
+      # 1. Install Node and the exact dependency versions from package-lock.json.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+
+      # 2. Build: turns the React/TS source into plain files in dist/.
+      - run: npm run build
+
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      # 3. Upload. Hashed assets (app.3f9c1a.js) never change, so cache them for a year.
+      #    index.html changes every deploy, so browsers must always re-check it.
+      #    --delete removes files that no longer exist in the build.
+      - name: Upload to S3
+        run: |
+          aws s3 sync dist/ "s3://${{ vars.UI_BUCKET }}" --delete \
+            --exclude index.html \
+            --cache-control "public,max-age=31536000,immutable"
+          aws s3 cp dist/index.html "s3://${{ vars.UI_BUCKET }}/index.html" \
+            --cache-control "no-cache"
+
+      # 4. Tell every CloudFront edge to drop its cached copies.
+      - name: Invalidate CloudFront
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}" \
+            --paths "/*"
+```
+
+That's it. Compared with the API pipeline there is no image, no registry, no
+health check and no rolling deploy. Files go in the bucket, the cache gets
+cleared, and the next person to load the page gets the new version.
+
+<Callout variant="insight" title="UI and API in one repo? Use `paths`.">
+  With `paths: ['frontend/**']` on the UI workflow and `paths: ['backend/**']` on the API one,
+  fixing a typo in a button doesn't redeploy your containers, and changing an endpoint doesn't
+  re-upload your whole site.
+</Callout>
+
+## The bouncer: a PR check that never deploys
+
+Deploys only happen on `develop`. Pull requests get a separate workflow whose
+only job is to say pass or fail. It has no AWS credentials at all, so it
+_can't_ deploy even by accident:
+
+```yaml
+name: PR Validation
+
+on:
+  pull_request:
+    branches: [develop]
+
+permissions:
+  contents: read
+
+jobs:
+  lint-workflows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # actionlint catches typos in workflow YAML before they break a real deploy.
+      - run: |
+          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          ./actionlint -color
+
+  validate-terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Terraform
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v4
+      - run: terraform fmt -check -recursive
+      - run: |
+          terraform init -backend=false -input=false
+          terraform validate
+```
+
+For a UI repo, add `npm ci && npm run build` here too. If it doesn't build on
+the PR, it won't build on `develop` either.
+
+## Watching it go
+
+Push something (even a README tweak) to `develop`, then:
+
+```bash
+gh run watch                # live view of the running workflow
+gh run view --log-failed    # if it goes red: only the logs of the step that failed
+```
+
+For the API, these are the three checks that say it genuinely worked:
+
+```bash
+# A new image, tagged with the commit SHA
+aws ecr describe-images --repository-name my-app --query 'imageDetails[].imageTags'
+
+# The service is on the new revision and the rollout finished
+aws ecs describe-services --cluster my-app-cluster --services my-app-service \
+  --query 'services[0].{taskDef:taskDefinition,running:runningCount,rollout:deployments[0].rolloutState}'
+
+# And the front door answers
+curl -i http://my-app-alb-123456.us-west-2.elb.amazonaws.com
+```
+
+And when something _does_ go red, here is where to look first:
+
+| What you see                       | Look here first                                                              |
+| ---------------------------------- | ---------------------------------------------------------------------------- |
+| The workflow failed                | **Actions** tab → the run → the red step's log                               |
+| No new image in ECR                | The ECR login and push steps; the IAM policy for the pipeline user           |
+| Deploy "succeeded", site is down   | ECS service **Events** tab, then target group health                         |
+| ALB returns 502                    | Container port vs task definition port vs target group port; CloudWatch logs |
+| UI still shows the old version     | Did the invalidation run? Is `index.html` cached? Try a private window       |
+| UI deep links 404 / show XML error | The CloudFront custom error response for 403 → `/index.html`                 |
+
+## Day 2 me vs Day 3 me
+
+<PipelineDiagram
+  caption="Before: five manual steps and a lot of hoping. After: one git push."
+  stages={[
+    { label: 'Day 2', detail: 'pull, tag, push, update service, refresh…', icon: '✋' },
+    { label: 'Day 3', detail: 'git push', icon: '🤖' },
+  ]}
+/>
+
+The pipeline does exactly what I used to do by hand, in the same order, just
+without typos, without forgetting a step, and without me needing to remember
+which terminal had the AWS credentials in it.
