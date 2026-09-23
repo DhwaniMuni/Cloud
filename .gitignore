@@ -15,6 +15,13 @@ pnpm-debug.log*
 .env
 .env.production
 
+# terraform (state and plans can contain secrets)
+.terraform/
+*.tfstate
+*.tfstate.*
+tfplan
+*.tfplan
+
 # macOS
 .DS_Store
 
